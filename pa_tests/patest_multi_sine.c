@@ -38,9 +38,10 @@
 #include <math.h>
 #include "portaudio.h"
 
-#define OUTPUT_DEVICE       (Pa_GetDefaultOutputDeviceID())
+#define OUTPUT_DEVICE       (Pa_GetDefaultOutputDevice())
+//#define NON_INTERLEAVED
 #define SAMPLE_RATE         (44100)
-#define FRAMES_PER_BUFFER   (256)
+#define FRAMES_PER_BUFFER   (0) // take what we get(256)
 #define FREQ_INCR           (300.0 / SAMPLE_RATE)
 #define MAX_CHANNELS        (64)
 
@@ -63,6 +64,31 @@ static int patestCallback( void *inputBuffer, void *outputBuffer,
                            unsigned long framesPerBuffer,
                            PaTimestamp outTime, void *userData )
 {
+    float **outputs = (float**)outputBuffer;
+
+#ifdef NON_INTERLEAVED
+    paTestData *data = (paTestData*)userData;
+    float *out = (float*)outputBuffer;
+    int frameIndex, channelIndex;
+    int finished = 0;
+    (void) outTime; /* Prevent unused variable warnings. */
+    (void) inputBuffer;
+
+    for( frameIndex=0; frameIndex<(int)framesPerBuffer; frameIndex++ )
+    {
+        for( channelIndex=0; channelIndex<data->numChannels; channelIndex++ )
+        {
+            /* Output sine wave on every channel. */
+            outputs[channelIndex][frameIndex] = (float) sin(data->phases[channelIndex]);
+
+            /* Play each channel at a higher frequency. */
+            data->phases[channelIndex] += FREQ_INCR * (4 + channelIndex);
+            if( data->phases[channelIndex] >= (2.0 * M_PI) ) data->phases[channelIndex] -= (2.0 * M_PI);
+        }
+    }
+    
+#else /* interleaved version */
+
     paTestData *data = (paTestData*)userData;
     float *out = (float*)outputBuffer;
     int frameIndex, channelIndex;
@@ -82,7 +108,7 @@ static int patestCallback( void *inputBuffer, void *outputBuffer,
             if( data->phases[channelIndex] >= (2.0 * M_PI) ) data->phases[channelIndex] -= (2.0 * M_PI);
         }
     }
-
+#endif /* NON_INTERLEAVED */
     return 0;
 }
 
@@ -90,7 +116,7 @@ static int patestCallback( void *inputBuffer, void *outputBuffer,
 int main(void);
 int main(void)
 {
-    PortAudioStream *stream;
+    PaStream *stream;
     PaError err;
     const PaDeviceInfo *pdi;
     paTestData data = {0};
@@ -109,14 +135,19 @@ int main(void)
               paNoDevice, /* default input device */
               0,              /* no input */
               paFloat32,  /* 32 bit floating point input */
+              0, /* default input latency */
               NULL,
               OUTPUT_DEVICE,
               data.numChannels,
-              paFloat32,  /* 32 bit floating point output */
+#ifdef NON_INTERLEAVED
+              paFloat32 | paNonInterleaved,  /* 32 bit floating point output */
+#else
+              paFloat32,
+#endif
+              0, /* default output latency */
               NULL,
               SAMPLE_RATE,
               FRAMES_PER_BUFFER,  /* frames per buffer */
-              0,    /* number of buffers, if zero then use default minimum */
               paClipOff,      /* we won't output out of range samples so don't bother clipping them */
               patestCallback,
               &data );

@@ -35,18 +35,44 @@
  * WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  *
  */
+
+/* on Borland compilers, WIN32 doesn't seem to be defined by default, which
+    breaks DSound.h. Adding the define here fixes the problem. - rossb. */
+#ifdef __BORLANDC__
+#if !defined(WIN32)
+#define WIN32
+#endif
+#endif
+
 #include <DSound.h>
 #if !defined(BOOL)
 #define BOOL short
 #endif
-#ifndef SUPPORT_AUDIO_CAPTURE
-#define SUPPORT_AUDIO_CAPTURE  (1)
-#endif
+
 
 #ifdef __cplusplus
 extern "C"
 {
 #endif /* __cplusplus */
+
+
+typedef struct
+{
+    HINSTANCE hInstance_;
+    
+    HRESULT (WINAPI *DirectSoundCreate)(LPGUID, LPDIRECTSOUND *, LPUNKNOWN);
+    HRESULT (WINAPI *DirectSoundEnumerateW)(LPDSENUMCALLBACKW, LPVOID);
+    HRESULT (WINAPI *DirectSoundEnumerateA)(LPDSENUMCALLBACKA, LPVOID);
+
+    HRESULT (WINAPI *DirectSoundCaptureCreate)(LPGUID, LPDIRECTSOUNDCAPTURE *, LPUNKNOWN);
+    HRESULT (WINAPI *DirectSoundCaptureEnumerateW)(LPDSENUMCALLBACKW, LPVOID);
+    HRESULT (WINAPI *DirectSoundCaptureEnumerateA)(LPDSENUMCALLBACKA, LPVOID);
+}DSoundEntryPoints;
+
+extern DSoundEntryPoints dswDSoundEntryPoints;
+
+void DSW_InitializeDSoundEntryPoints(void);
+void DSW_TerminateDSoundEntryPoints(void);
 
 #define DSW_NUM_POSITIONS     (4)
 #define DSW_NUM_EVENTS        (5)
@@ -54,12 +80,12 @@ extern "C"
 
 typedef struct
 {
-    /* Output */
+/* Output */
     LPDIRECTSOUND        dsw_pDirectSound;
     LPDIRECTSOUNDBUFFER  dsw_OutputBuffer;
     DWORD                dsw_WriteOffset;     /* last write position */
     INT                  dsw_OutputSize;
-    INT                  dsw_BytesPerFrame;
+    INT                  dsw_BytesPerOutputFrame;
     /* Try to detect play buffer underflows. */
     LARGE_INTEGER        dsw_CounterTicksPerBuffer; /* counter ticks it should take to play a full buffer */
     LARGE_INTEGER        dsw_LastPlayTime;
@@ -69,16 +95,14 @@ typedef struct
     /* use double which lets us can play for several thousand years with enough precision */
     double               dsw_FramesWritten;
     double               dsw_FramesPlayed;
-#if SUPPORT_AUDIO_CAPTURE
-    /* Input */
+/* Input */
+    INT                  dsw_BytesPerInputFrame;
     LPDIRECTSOUNDCAPTURE dsw_pDirectSoundCapture;
     LPDIRECTSOUNDCAPTUREBUFFER   dsw_InputBuffer;
     UINT                 dsw_ReadOffset;      /* last read position */
     UINT                 dsw_InputSize;
-#endif /* SUPPORT_AUDIO_CAPTURE */
+} DSoundWrapper;
 
-}
-DSoundWrapper;
 HRESULT DSW_Init( DSoundWrapper *dsw );
 void DSW_Term( DSoundWrapper *dsw );
 HRESULT DSW_InitOutputBuffer( DSoundWrapper *dsw, unsigned long nFrameRate,
@@ -91,14 +115,13 @@ HRESULT DSW_ZeroEmptySpace( DSoundWrapper *dsw );
 HRESULT DSW_QueryOutputSpace( DSoundWrapper *dsw, long *bytesEmpty );
 HRESULT DSW_Enumerate( DSoundWrapper *dsw );
 
-#if SUPPORT_AUDIO_CAPTURE
 HRESULT DSW_InitInputBuffer( DSoundWrapper *dsw, unsigned long nFrameRate,
                              int nChannels, int bufSize );
 HRESULT DSW_StartInput( DSoundWrapper *dsw );
 HRESULT DSW_StopInput( DSoundWrapper *dsw );
 HRESULT DSW_ReadBlock( DSoundWrapper *dsw, char *buf, long numBytes );
 HRESULT DSW_QueryInputFilled( DSoundWrapper *dsw, long *bytesFilled );
-#endif /* SUPPORT_AUDIO_CAPTURE */
+HRESULT DSW_QueryOutputFilled( DSoundWrapper *dsw, long *bytesFilled );
 
 #ifdef __cplusplus
 }

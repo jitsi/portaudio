@@ -43,6 +43,121 @@
 #include "pa_trace.h"
 
 /************************************************************************************/
+DSoundEntryPoints dswDSoundEntryPoints = { 0, 0, 0, 0, 0, 0, 0 };
+/************************************************************************************/
+static HRESULT WINAPI DummyDirectSoundCreate(LPGUID lpcGuidDevice, LPDIRECTSOUND *ppDS, LPUNKNOWN pUnkOuter)
+{
+    (void)lpcGuidDevice; /* unused parameter */
+    (void)ppDS; /* unused parameter */
+    (void)pUnkOuter; /* unused parameter */
+    return E_NOTIMPL;
+}
+
+static HRESULT WINAPI DummyDirectSoundEnumerateW(LPDSENUMCALLBACKW lpDSEnumCallback, LPVOID lpContext)
+{
+    (void)lpDSEnumCallback; /* unused parameter */
+    (void)lpContext; /* unused parameter */
+    return E_NOTIMPL;
+}
+
+static HRESULT WINAPI DummyDirectSoundEnumerateA(LPDSENUMCALLBACKA lpDSEnumCallback, LPVOID lpContext)
+{
+    (void)lpDSEnumCallback; /* unused parameter */
+    (void)lpContext; /* unused parameter */
+    return E_NOTIMPL;
+}
+
+static HRESULT WINAPI DummyDirectSoundCaptureCreate(LPGUID lpcGUID, LPDIRECTSOUNDCAPTURE *lplpDSC, LPUNKNOWN pUnkOuter)
+{
+    (void)lpcGUID; /* unused parameter */
+    (void)lplpDSC; /* unused parameter */
+    (void)pUnkOuter; /* unused parameter */
+    return E_NOTIMPL;
+}
+
+static HRESULT WINAPI DummyDirectSoundCaptureEnumerateW(LPDSENUMCALLBACKW lpDSCEnumCallback, LPVOID lpContext)
+{
+    (void)lpDSCEnumCallback; /* unused parameter */
+    (void)lpContext; /* unused parameter */
+    return E_NOTIMPL;
+}
+
+static HRESULT WINAPI DummyDirectSoundCaptureEnumerateA(LPDSENUMCALLBACKA lpDSCEnumCallback, LPVOID lpContext)
+{
+    (void)lpDSCEnumCallback; /* unused parameter */
+    (void)lpContext; /* unused parameter */
+    return E_NOTIMPL;
+}
+/************************************************************************************/
+void DSW_InitializeDSoundEntryPoints(void)
+{
+    dswDSoundEntryPoints.hInstance_ = LoadLibrary("dsound.dll");
+    if( dswDSoundEntryPoints.hInstance_ != NULL )
+    {
+        dswDSoundEntryPoints.DirectSoundCreate =
+                (HRESULT (WINAPI *)(LPGUID, LPDIRECTSOUND *, LPUNKNOWN))
+                GetProcAddress( dswDSoundEntryPoints.hInstance_, "DirectSoundCreate" );
+        if( dswDSoundEntryPoints.DirectSoundCreate == NULL )
+            dswDSoundEntryPoints.DirectSoundCreate = DummyDirectSoundCreate;
+
+        dswDSoundEntryPoints.DirectSoundEnumerateW =
+                (HRESULT (WINAPI *)(LPDSENUMCALLBACKW, LPVOID))
+                GetProcAddress( dswDSoundEntryPoints.hInstance_, "DirectSoundEnumerateW" );
+        if( dswDSoundEntryPoints.DirectSoundEnumerateW == NULL )
+            dswDSoundEntryPoints.DirectSoundEnumerateW = DummyDirectSoundEnumerateW;
+
+        dswDSoundEntryPoints.DirectSoundEnumerateA =
+                (HRESULT (WINAPI *)(LPDSENUMCALLBACKA, LPVOID))
+                GetProcAddress( dswDSoundEntryPoints.hInstance_, "DirectSoundEnumerateA" );
+        if( dswDSoundEntryPoints.DirectSoundEnumerateA == NULL )
+            dswDSoundEntryPoints.DirectSoundEnumerateA = DummyDirectSoundEnumerateA;
+
+        dswDSoundEntryPoints.DirectSoundCaptureCreate =
+                (HRESULT (WINAPI *)(LPGUID, LPDIRECTSOUNDCAPTURE *, LPUNKNOWN))
+                GetProcAddress( dswDSoundEntryPoints.hInstance_, "DirectSoundCaptureCreate" );
+        if( dswDSoundEntryPoints.DirectSoundCaptureCreate == NULL )
+            dswDSoundEntryPoints.DirectSoundCaptureCreate = DummyDirectSoundCaptureCreate;
+
+        dswDSoundEntryPoints.DirectSoundCaptureEnumerateW =
+                (HRESULT (WINAPI *)(LPDSENUMCALLBACKW, LPVOID))
+                GetProcAddress( dswDSoundEntryPoints.hInstance_, "DirectSoundCaptureEnumerateW" );
+        if( dswDSoundEntryPoints.DirectSoundCaptureEnumerateW == NULL )
+            dswDSoundEntryPoints.DirectSoundCaptureEnumerateW = DummyDirectSoundCaptureEnumerateW;
+
+        dswDSoundEntryPoints.DirectSoundCaptureEnumerateA =
+                (HRESULT (WINAPI *)(LPDSENUMCALLBACKA, LPVOID))
+                GetProcAddress( dswDSoundEntryPoints.hInstance_, "DirectSoundCaptureEnumerateA" );
+        if( dswDSoundEntryPoints.DirectSoundCaptureEnumerateA == NULL )
+            dswDSoundEntryPoints.DirectSoundCaptureEnumerateA = DummyDirectSoundCaptureEnumerateA;
+    }
+    else
+    {
+        /* initialize with dummy entry points to make live easy when ds isn't present */
+        dswDSoundEntryPoints.DirectSoundCreate = DummyDirectSoundCreate;
+        dswDSoundEntryPoints.DirectSoundEnumerateW = DummyDirectSoundEnumerateW;
+        dswDSoundEntryPoints.DirectSoundEnumerateA = DummyDirectSoundEnumerateA;
+        dswDSoundEntryPoints.DirectSoundCaptureCreate = DummyDirectSoundCaptureCreate;
+        dswDSoundEntryPoints.DirectSoundCaptureEnumerateW = DummyDirectSoundCaptureEnumerateW;
+        dswDSoundEntryPoints.DirectSoundCaptureEnumerateA = DummyDirectSoundCaptureEnumerateA;
+    }
+}
+/************************************************************************************/
+void DSW_TerminateDSoundEntryPoints(void)
+{
+    if( dswDSoundEntryPoints.hInstance_ != NULL )
+    {
+        FreeLibrary( dswDSoundEntryPoints.hInstance_ );
+        dswDSoundEntryPoints.hInstance_ = NULL;
+        /* ensure that we crash reliably if the entry points arent initialised */
+        dswDSoundEntryPoints.DirectSoundCreate = 0;
+        dswDSoundEntryPoints.DirectSoundEnumerateW = 0;
+        dswDSoundEntryPoints.DirectSoundEnumerateA = 0;
+        dswDSoundEntryPoints.DirectSoundCaptureCreate = 0;
+        dswDSoundEntryPoints.DirectSoundCaptureEnumerateW = 0;
+        dswDSoundEntryPoints.DirectSoundCaptureEnumerateA = 0;
+    }
+}
+/************************************************************************************/
 void DSW_Term( DSoundWrapper *dsw )
 {
     // Cleanup the sound buffers
@@ -52,19 +167,20 @@ void DSW_Term( DSoundWrapper *dsw )
         IDirectSoundBuffer_Release( dsw->dsw_OutputBuffer );
         dsw->dsw_OutputBuffer = NULL;
     }
-#if SUPPORT_AUDIO_CAPTURE
+
     if (dsw->dsw_InputBuffer)
     {
         IDirectSoundCaptureBuffer_Stop( dsw->dsw_InputBuffer );
         IDirectSoundCaptureBuffer_Release( dsw->dsw_InputBuffer );
         dsw->dsw_InputBuffer = NULL;
     }
+
     if (dsw->dsw_pDirectSoundCapture)
     {
         IDirectSoundCapture_Release( dsw->dsw_pDirectSoundCapture );
         dsw->dsw_pDirectSoundCapture = NULL;
     }
-#endif /* SUPPORT_AUDIO_CAPTURE */
+
     if (dsw->dsw_pDirectSound)
     {
         IDirectSound_Release( dsw->dsw_pDirectSound );
@@ -81,7 +197,7 @@ HRESULT DSW_Init( DSoundWrapper *dsw )
 HRESULT DSW_InitOutputDevice( DSoundWrapper *dsw, LPGUID lpGUID )
 {
     // Create the DS object
-    HRESULT hr = DirectSoundCreate( lpGUID, &dsw->dsw_pDirectSound, NULL );
+    HRESULT hr = dswDSoundEntryPoints.DirectSoundCreate( lpGUID, &dsw->dsw_pDirectSound, NULL );
     if( hr != DS_OK ) return hr;
     return hr;
 }
@@ -100,17 +216,20 @@ HRESULT DSW_InitOutputBuffer( DSoundWrapper *dsw, unsigned long nFrameRate, int 
     DSBUFFERDESC   secondaryDesc;
     unsigned char* pDSBuffData;
     LARGE_INTEGER  counterFrequency;
+
     dsw->dsw_OutputSize = bytesPerBuffer;
     dsw->dsw_OutputRunning = FALSE;
     dsw->dsw_OutputUnderflows = 0;
     dsw->dsw_FramesWritten = 0;
-    dsw->dsw_BytesPerFrame = nChannels * sizeof(short);
+    dsw->dsw_BytesPerOutputFrame = nChannels * sizeof(short);
+
     // We were using getForegroundWindow() but sometimes the ForegroundWindow may not be the
     // applications's window. Also if that window is closed before the Buffer is closed
     // then DirectSound can crash. (Thanks for Scott Patterson for reporting this.)
     // So we will use GetDesktopWindow() which was suggested by Miller Puckette.
     // hWnd = GetForegroundWindow();
     hWnd = GetDesktopWindow();
+
     // Set cooperative level to DSSCL_EXCLUSIVE so that we can get 16 bit output, 44.1 KHz.
     // Exclusize also prevents unexpected sounds from other apps during a performance.
     if ((hr = IDirectSound_SetCooperativeLevel( dsw->dsw_pDirectSound,
@@ -118,6 +237,7 @@ HRESULT DSW_InitOutputBuffer( DSoundWrapper *dsw, unsigned long nFrameRate, int 
     {
         return hr;
     }
+
     // -----------------------------------------------------------------------
     // Create primary buffer and set format just so we can specify our custom format.
     // Otherwise we would be stuck with the default which might be 8 bit or 22050 Hz.
@@ -140,6 +260,7 @@ HRESULT DSW_InitOutputBuffer( DSoundWrapper *dsw, unsigned long nFrameRate, int 
     wfFormat.cbSize = 0;  /* No extended format info. */
     // Set the primary buffer's format
     if((result = IDirectSoundBuffer_SetFormat( pPrimaryBuffer, &wfFormat)) != DS_OK) return result;
+
     // ----------------------------------------------------------------------
     // Setup the secondary buffer description
     ZeroMemory(&secondaryDesc, sizeof(DSBUFFERDESC));
@@ -161,7 +282,6 @@ HRESULT DSW_InitOutputBuffer( DSoundWrapper *dsw, unsigned long nFrameRate, int 
     {
         int framesInBuffer = bytesPerBuffer / (nChannels * sizeof(short));
         dsw->dsw_CounterTicksPerBuffer.QuadPart = (counterFrequency.QuadPart * framesInBuffer) / nFrameRate;
-        AddTraceMessage("dsw_CounterTicksPerBuffer = %d\n", dsw->dsw_CounterTicksPerBuffer.LowPart );
     }
     else
     {
@@ -174,7 +294,7 @@ HRESULT DSW_InitOutputBuffer( DSoundWrapper *dsw, unsigned long nFrameRate, int 
     {
         return hr;
     }
-    dsw->dsw_FramesWritten = dsw->dsw_WriteOffset / dsw->dsw_BytesPerFrame;
+    dsw->dsw_FramesWritten = dsw->dsw_WriteOffset / dsw->dsw_BytesPerOutputFrame;
     /* printf("DSW_InitOutputBuffer: playCursor = %d, writeCursor = %d\n", playCursor, dsw->dsw_WriteOffset ); */
     return DS_OK;
 }
@@ -217,6 +337,31 @@ HRESULT DSW_StopOutput( DSoundWrapper *dsw )
 }
 
 /************************************************************************************/
+HRESULT DSW_QueryOutputFilled( DSoundWrapper *dsw, long *bytesFilledPtr )
+{
+    HRESULT hr;
+    DWORD   playCursor;
+    DWORD   writeCursor;
+    long    bytesFilled;
+    // Query to see where play position is.
+    // We don't need the writeCursor but sometimes DirectSound doesn't handle NULLS correctly
+    // so let's pass a pointer just to be safe.
+    hr = IDirectSoundBuffer_GetCurrentPosition( dsw->dsw_OutputBuffer, &playCursor, &writeCursor );
+    if( hr != DS_OK )
+    {
+        return hr;
+    }
+    bytesFilled = dsw->dsw_WriteOffset - playCursor;
+    if( bytesFilled < 0 ) bytesFilled += dsw->dsw_OutputSize; // unwrap offset
+    *bytesFilledPtr = bytesFilled;
+    return hr;
+}
+
+/************************************************************************************
+ * Determine how much space can be safely written to in DS buffer.
+ * Detect underflows and overflows.
+ * Does not allow writing into safety gap maintained by DirectSound.
+ */
 HRESULT DSW_QueryOutputSpace( DSoundWrapper *dsw, long *bytesEmpty )
 {
     HRESULT hr;
@@ -225,16 +370,11 @@ HRESULT DSW_QueryOutputSpace( DSoundWrapper *dsw, long *bytesEmpty )
     long    numBytesEmpty;
     long    playWriteGap;
     // Query to see how much room is in buffer.
-    // Note: Even though writeCursor is not used, it must be passed to prevent DirectSound from dieing
-    // under WinNT. The Microsoft documentation says we can pass NULL but apparently not.
-    // Thanks to Max Rheiner for the fix.
     hr = IDirectSoundBuffer_GetCurrentPosition( dsw->dsw_OutputBuffer, &playCursor, &writeCursor );
     if( hr != DS_OK )
     {
         return hr;
     }
-    AddTraceMessage("playCursor", playCursor);
-    AddTraceMessage("dsw_WriteOffset", dsw->dsw_WriteOffset);
     // Determine size of gap between playIndex and WriteIndex that we cannot write into.
     playWriteGap = writeCursor - playCursor;
     if( playWriteGap < 0 ) playWriteGap += dsw->dsw_OutputSize; // unwrap
@@ -260,13 +400,11 @@ HRESULT DSW_QueryOutputSpace( DSoundWrapper *dsw, long *bytesEmpty )
         buffersWrapped = (bytesExpected - bytesPlayed) / dsw->dsw_OutputSize;
         if( buffersWrapped > 0 )
         {
-            AddTraceMessage("playCursor wrapped! bytesPlayed", bytesPlayed );
-            AddTraceMessage("playCursor wrapped! bytesExpected", bytesExpected );
             playCursor += (buffersWrapped * dsw->dsw_OutputSize);
             bytesPlayed += (buffersWrapped * dsw->dsw_OutputSize);
         }
         /* Maintain frame output cursor. */
-        dsw->dsw_FramesPlayed += (bytesPlayed / dsw->dsw_BytesPerFrame);
+        dsw->dsw_FramesPlayed += (bytesPlayed / dsw->dsw_BytesPerOutputFrame);
     }
     numBytesEmpty = playCursor - dsw->dsw_WriteOffset;
     if( numBytesEmpty < 0 ) numBytesEmpty += dsw->dsw_OutputSize; // unwrap offset
@@ -276,7 +414,6 @@ HRESULT DSW_QueryOutputSpace( DSoundWrapper *dsw, long *bytesEmpty )
         if( dsw->dsw_OutputRunning )
         {
             dsw->dsw_OutputUnderflows += 1;
-            AddTraceMessage("underflow detected! numBytesEmpty", numBytesEmpty );
         }
         dsw->dsw_WriteOffset = writeCursor;
         numBytesEmpty = dsw->dsw_OutputSize - playWriteGap;
@@ -311,7 +448,7 @@ HRESULT DSW_ZeroEmptySpace( DSoundWrapper *dsw )
         // Update our buffer offset and unlock sound buffer
         dsw->dsw_WriteOffset = (dsw->dsw_WriteOffset + dwsize1 + dwsize2) % dsw->dsw_OutputSize;
         IDirectSoundBuffer_Unlock( dsw->dsw_OutputBuffer, lpbuf1, dwsize1, lpbuf2, dwsize2);
-        dsw->dsw_FramesWritten += bytesEmpty / dsw->dsw_BytesPerFrame;
+        dsw->dsw_FramesWritten += bytesEmpty / dsw->dsw_BytesPerOutputFrame;
     }
     return hr;
 }
@@ -338,7 +475,7 @@ HRESULT DSW_WriteBlock( DSoundWrapper *dsw, char *buf, long numBytes )
         // Update our buffer offset and unlock sound buffer
         dsw->dsw_WriteOffset = (dsw->dsw_WriteOffset + dwsize1 + dwsize2) % dsw->dsw_OutputSize;
         IDirectSoundBuffer_Unlock( dsw->dsw_OutputBuffer, lpbuf1, dwsize1, lpbuf2, dwsize2);
-        dsw->dsw_FramesWritten += numBytes / dsw->dsw_BytesPerFrame;
+        dsw->dsw_FramesWritten += numBytes / dsw->dsw_BytesPerOutputFrame;
     }
     return hr;
 }
@@ -353,7 +490,6 @@ DWORD DSW_GetOutputStatus( DSoundWrapper *dsw )
         return( status );
 }
 
-#if SUPPORT_AUDIO_CAPTURE
 /* These routines are used to support audio input.
  * Do NOT compile these calls when using NT4 because it does
  * not support the entry points.
@@ -361,7 +497,7 @@ DWORD DSW_GetOutputStatus( DSoundWrapper *dsw )
 /************************************************************************************/
 HRESULT DSW_InitInputDevice( DSoundWrapper *dsw, LPGUID lpGUID )
 {
-    HRESULT hr = DirectSoundCaptureCreate(  lpGUID, &dsw->dsw_pDirectSoundCapture,   NULL );
+    HRESULT hr = dswDSoundEntryPoints.DirectSoundCaptureCreate(  lpGUID, &dsw->dsw_pDirectSoundCapture,   NULL );
     if( hr != DS_OK ) return hr;
     return hr;
 }
@@ -371,6 +507,9 @@ HRESULT DSW_InitInputBuffer( DSoundWrapper *dsw, unsigned long nFrameRate, int n
     DSCBUFFERDESC  captureDesc;
     WAVEFORMATEX   wfFormat;
     HRESULT        result;
+    
+    dsw->dsw_BytesPerInputFrame = nChannels * sizeof(short);
+
     // Define the buffer format
     wfFormat.wFormatTag      = WAVE_FORMAT_PCM;
     wfFormat.nChannels       = nChannels;
@@ -463,4 +602,3 @@ HRESULT DSW_ReadBlock( DSoundWrapper *dsw, char *buf, long numBytes )
     return hr;
 }
 
-#endif /* SUPPORT_AUDIO_CAPTURE */

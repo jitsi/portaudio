@@ -1,12 +1,11 @@
-#ifndef PA_TRACE_H
-#define PA_TRACE_H
+#ifndef PA_ASIO_H
+#define PA_ASIO_H
 /*
- * $Id$
- * Portable Audio I/O Library Trace Facility
- * Store trace information in real-time for later printing.
  *
- * Based on the Open Source API proposed by Ross Bencina
- * Copyright (c) 1999-2000 Phil Burk
+ * PortAudio Portable Real-Time Audio Library
+ * ASIO specific extensions
+ *
+ * Copyright (c) 1999-2000 Ross Bencina and Phil Burk
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files
@@ -30,11 +29,12 @@
  * ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF
  * CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
  * WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+ *
  */
 
 
-#define PA_TRACE_REALTIME_EVENTS     (0)   /* Keep log of various real-time events. */
-#define PA_MAX_TRACE_RECORDS      (2048)
+#include "portaudio.h"
+
 
 #ifdef __cplusplus
 extern "C"
@@ -42,23 +42,27 @@ extern "C"
 #endif /* __cplusplus */
 
 
-#if PA_TRACE_REALTIME_EVENTS
+PaError PaAsio_GetAvailableLatencyValues( PaDeviceIndex device,
+		long *minLatency, long *maxLatency, long *preferredLatency, long *granularity );
+/**<
+ Retrieve legal latency settings for the specificed device, in samples.
 
-void PaUtil_ResetTraceMessages();
-void PaUtil_AddTraceMessage( const char *msg, int data );
-void PaUtil_DumpTraceMessages();
-    
-#else
+ @param device The global index of the device about which the query is being made.
+ @param minLatency A pointer to the location which will recieve the minimum latency value.
+ @param maxLatency A pointer to the location which will recieve the maximum latency value.
+ @param minLatency A pointer to the location which will recieve the preferred latency value.
+ @param granularity A pointer to the location which will recieve the granularity. This value 
+ determines which values between minLatency and maxLatency are available. ie the step size,
+ if granularity is -1 then available latency settings are powers of two.
 
-#define PaUtil_ResetTraceMessages() /* noop */
-#define PaUtil_AddTraceMessage(msg,data) /* noop */
-#define PaUtil_DumpTraceMessages() /* noop */
+ @see ASIOGetBufferSize in the ASIO SDK.
 
-#endif
+ @note This function should have a better name, any suggestions?
+*/
 
 
 #ifdef __cplusplus
 }
 #endif /* __cplusplus */
 
-#endif /* PA_TRACE_H */
+#endif /* PA_ASIO_H */

@@ -110,7 +110,7 @@ static int fuzzCallback( void *inputBuffer, void *outputBuffer,
 int main(void);
 int main(void)
 {
-    PortAudioStream *stream;
+    PaStream *stream;
     PaError err;
 
     err = Pa_Initialize();
@@ -118,17 +118,18 @@ int main(void)
 
     err = Pa_OpenStream(
               &stream,
-              Pa_GetDefaultInputDeviceID(), /* default output device */
+              Pa_GetDefaultInputDevice(), /* default output device */
               2,               /* stereo input */
               PA_SAMPLE_TYPE,
+              0, /* use default input latency */
               NULL,
-              Pa_GetDefaultOutputDeviceID(), /* default output device */
+              Pa_GetDefaultOutputDevice(), /* default output device */
               2,               /* stereo output */
               PA_SAMPLE_TYPE,
+              0, /* use default output latency */
               NULL,
               SAMPLE_RATE,
               FRAMES_PER_BUFFER,
-              0,             /* number of buffers, if zero then use default minimum */
               0, // paClipOff,     /* we won't output out of range samples so don't bother clipping them */
               fuzzCallback,
               NULL );
