@@ -75,6 +75,7 @@ EXAMPLES = \
 	bin/paex_record \
 	bin/paex_saw \
 	bin/paex_sine \
+	bin/paex_update_available_device_list \
 	bin/paex_write_sine \
 	bin/paex_write_sine_nonint
 
@@ -150,6 +151,7 @@ SRC_DIRS = \
 	src/hostapi/wdmks \
 	src/hostapi/wmme \
 	src/os/unix \
+	src/os/mac_osx \
 	src/os/win
 
 SUBDIRS =
