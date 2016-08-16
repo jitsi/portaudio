@@ -47,6 +47,9 @@ extern "C"
 {
 #endif /* __cplusplus */
 
+/* use some special bit patterns here to try to guard against uninitialized memory errors */
+#define PAWINUTIL_COM_INITIALIZED       (0xb38f)
+#define PAWINUTIL_COM_NOT_INITIALIZED   (0xf1cd)
 
 /**
  @brief Data type used to hold the result of an attempt to initialize COM

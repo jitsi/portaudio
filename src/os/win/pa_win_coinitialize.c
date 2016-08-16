@@ -56,12 +56,6 @@
 #pragma comment( lib, "ole32.lib" )
 #endif
 
-
-/* use some special bit patterns here to try to guard against uninitialized memory errors */
-#define PAWINUTIL_COM_INITIALIZED       (0xb38f)
-#define PAWINUTIL_COM_NOT_INITIALIZED   (0xf1cd)
-
-
 PaError PaWinUtil_CoInitialize( PaHostApiTypeId hostApiType, PaWinUtilComInitializationResult *comInitializationResult )
 {
     HRESULT hr;
