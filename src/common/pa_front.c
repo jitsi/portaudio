@@ -454,7 +454,8 @@ const char *Pa_GetErrorText( PaError errorCode )
     case paCanNotWriteToAnInputOnlyStream:      result = "Can't write to an input only stream"; break;
     case paIncompatibleStreamHostApi: result = "Incompatible stream host API"; break;
     case paBadBufferPtr:             result = "Bad buffer pointer"; break;
-    default:                         
+    case paStreamIsStopping:         result = "Stream is stopping"; break;
+    default:
 		if( errorCode > 0 )
 			result = "Invalid error code (value greater than zero)"; 
         else
