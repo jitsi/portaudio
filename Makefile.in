@@ -100,6 +100,7 @@ TESTS = \
 	bin/patest_multi_sine \
 	bin/patest_out_underflow \
 	bin/patest_prime \
+	bin/patest_refresh_device_list \
 	bin/patest_ringmix \
 	bin/patest_sine8 \
 	bin/patest_sine_channelmaps \

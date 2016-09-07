@@ -446,7 +446,7 @@ case "${host_os}" in
               ;;
         esac
 
-        OTHER_OBJS="$OTHER_OBJS src/os/unix/pa_unix_hostapis.o src/os/unix/pa_unix_util.o"
+        OTHER_OBJS="$OTHER_OBJS src/os/unix/pa_unix_hostapis.o src/os/unix/pa_unix_util.o src/os/unix/pa_linux_hotplug.o"
 esac
 CFLAGS="$CFLAGS $THREAD_CFLAGS"
 
