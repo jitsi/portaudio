@@ -683,7 +683,7 @@ typedef struct PaAlsaDeviceInfo
 }
 PaAlsaDeviceInfo;
 
-/* used for tranferring device infos during scanning / rescanning */
+/* used for transferring device info during scanning / rescanning */
 typedef struct PaLinuxScanDeviceInfosResults
 {
     PaDeviceInfo **deviceInfos;
