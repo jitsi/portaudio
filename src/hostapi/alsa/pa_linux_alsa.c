@@ -785,9 +785,10 @@ PaError PaAlsa_Initialize( PaUtilHostApiRepresentation **hostApi, PaHostApiIndex
     */
     /*ENSURE_( snd_lib_error_set_handler(AlsaErrorHandler), paUnanticipatedHostError );*/
 
-    ScanDeviceInfos(&alsaHostApi->baseHostApiRep, hostApiIndex, &scanResults,
-              &deviceCount);
-    CommitDeviceInfos(&alsaHostApi->baseHostApiRep, hostApiIndex, scanResults, deviceCount);
+    PA_ENSURE( ScanDeviceInfos(&alsaHostApi->baseHostApiRep, hostApiIndex, &scanResults,
+                               &deviceCount) );
+    PA_ENSURE( CommitDeviceInfos(&alsaHostApi->baseHostApiRep, hostApiIndex, scanResults,
+                                 deviceCount) );
 
     PaUtil_InitializeStreamInterface( &alsaHostApi->callbackStreamInterface,
                                       CloseStream, StartStream,
