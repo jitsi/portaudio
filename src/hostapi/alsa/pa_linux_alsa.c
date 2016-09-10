@@ -721,11 +721,11 @@ static int SetApproximateSampleRate( snd_pcm_t *pcm, snd_pcm_hw_params_t *hwPara
 static int GetExactSampleRate( snd_pcm_hw_params_t *hwParams, double *sampleRate );
 static PaUint32 PaAlsaVersionNum(void);
 
-static PaError ScanDeviceInfos(struct PaUtilHostApiRepresentation *hostApi, PaHostApiIndex index,
+static PaError ScanDeviceInfos( struct PaUtilHostApiRepresentation *hostApi, PaHostApiIndex index,
         void **newDeviceInfos, int *newDeviceCount );
-static PaError CommitDeviceInfos(struct PaUtilHostApiRepresentation *hostApi, PaHostApiIndex index,
-        void *deviceInfos, int deviceCount);
-static PaError DisposeDeviceInfos(struct PaUtilHostApiRepresentation *hostApi, void *deviceInfos,
+static PaError CommitDeviceInfos( struct PaUtilHostApiRepresentation *hostApi, PaHostApiIndex index,
+        void *deviceInfos, int deviceCount );
+static PaError DisposeDeviceInfos( struct PaUtilHostApiRepresentation *hostApi, void *deviceInfos,
         int deviceCount );
 
 /* Callback prototypes */
@@ -4654,12 +4654,12 @@ PaError PaAlsa_SetRetriesBusy( int retries )
     return paNoError;
 }
 
-static PaError ScanDeviceInfos(struct PaUtilHostApiRepresentation *hostApi, PaHostApiIndex hostApiIndex,
-        void **scanResults, int *newDeviceCount)
+static PaError ScanDeviceInfos( struct PaUtilHostApiRepresentation *hostApi, PaHostApiIndex hostApiIndex,
+        void **scanResults, int *newDeviceCount )
 {
     PaAlsaHostApiRepresentation* alsaHostApi = (PaAlsaHostApiRepresentation*)hostApi;
     PaError result = paNoError;
-    PA_ENSURE(BuildDeviceList( alsaHostApi, scanResults, newDeviceCount ));
+    PA_ENSURE( BuildDeviceList( alsaHostApi, scanResults, newDeviceCount ) );
 
     return paNoError;
 
@@ -4667,8 +4667,8 @@ error:
     return result;
 }
 
-static PaError CommitDeviceInfos(struct PaUtilHostApiRepresentation *hostApi, PaHostApiIndex index,
-        void *scanResults, int deviceCount)
+static PaError CommitDeviceInfos( struct PaUtilHostApiRepresentation *hostApi, PaHostApiIndex index,
+        void *scanResults, int deviceCount )
 {
     PaAlsaHostApiRepresentation* alsaHostApi = (PaAlsaHostApiRepresentation*)hostApi;
     PaError result = paNoError;
@@ -4688,7 +4688,7 @@ static PaError CommitDeviceInfos(struct PaUtilHostApiRepresentation *hostApi, Pa
 
     if( scanResults != NULL )
     {
-        PaAlsaScanDeviceInfosResults *scanDeviceInfosResults = ( PaAlsaScanDeviceInfosResults * ) scanResults;
+        PaAlsaScanDeviceInfosResults *scanDeviceInfosResults = (PaAlsaScanDeviceInfosResults*)scanResults;
 
         if( deviceCount > 0 )
         {
@@ -4705,13 +4705,13 @@ static PaError CommitDeviceInfos(struct PaUtilHostApiRepresentation *hostApi, Pa
     return result;
 }
 
-static PaError DisposeDeviceInfos(struct PaUtilHostApiRepresentation *hostApi, void *scanResults, int deviceCount)
+static PaError DisposeDeviceInfos( struct PaUtilHostApiRepresentation *hostApi, void *scanResults, int deviceCount )
 {
     PaAlsaHostApiRepresentation *alsaHostApi = (PaAlsaHostApiRepresentation*)hostApi;
 
     if( scanResults != NULL )
     {
-        PaAlsaScanDeviceInfosResults *scanDeviceInfosResults = ( PaAlsaScanDeviceInfosResults * ) scanResults;
+        PaAlsaScanDeviceInfosResults *scanDeviceInfosResults = (PaAlsaScanDeviceInfosResults*)scanResults;
         if( scanDeviceInfosResults->deviceInfos )
         {
             /* all device info structs are allocated in a block so we can destroy them here */
@@ -4719,7 +4719,7 @@ static PaError DisposeDeviceInfos(struct PaUtilHostApiRepresentation *hostApi, v
             PaUtil_GroupFreeMemory( alsaHostApi->allocations, scanDeviceInfosResults->deviceInfos );
         }
 
-        PaUtil_GroupFreeMemory(alsaHostApi->allocations, scanDeviceInfosResults );
+        PaUtil_GroupFreeMemory( alsaHostApi->allocations, scanDeviceInfosResults );
     }
 
     return paNoError;
