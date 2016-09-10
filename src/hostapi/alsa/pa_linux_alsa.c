@@ -684,13 +684,13 @@ typedef struct PaAlsaDeviceInfo
 PaAlsaDeviceInfo;
 
 /* used for transferring device info during scanning / rescanning */
-typedef struct PaLinuxScanDeviceInfosResults
+typedef struct PaAlsaScanDeviceInfosResults
 {
     PaDeviceInfo **deviceInfos;
     PaDeviceIndex defaultInputDevice;
     PaDeviceIndex defaultOutputDevice;
     int deviceCount;
-} PaLinuxScanDeviceInfosResults;
+} PaAlsaScanDeviceInfosResults;
 
 /* prototypes for functions declared in this file */
 
@@ -1172,7 +1172,7 @@ static int OpenPcm( snd_pcm_t **pcmp, const char *name, snd_pcm_stream_t stream,
 }
 
 static PaError FillInDevInfo( PaAlsaHostApiRepresentation *alsaApi, HwDevInfo* deviceHwInfo, int blocking,
-        PaAlsaDeviceInfo* devInfo, int* devIdx, PaLinuxScanDeviceInfosResults* out )
+        PaAlsaDeviceInfo* devInfo, int* devIdx, PaAlsaScanDeviceInfosResults* out )
 {
     PaError result = 0;
     PaDeviceInfo *baseDeviceInfo = &devInfo->baseDeviceInfo;
@@ -1254,7 +1254,7 @@ end:
 static PaError BuildDeviceList( PaAlsaHostApiRepresentation *alsaApi, void** scanResults, int* count)
 {
     PaUtilHostApiRepresentation *baseApi = &alsaApi->baseHostApiRep;
-    PaLinuxScanDeviceInfosResults *outArgument = NULL;
+    PaAlsaScanDeviceInfosResults *outArgument = NULL;
     PaAlsaDeviceInfo *deviceInfoArray;
     int cardIdx = -1, devIdx = 0;
     snd_ctl_card_info_t *cardInfo;
@@ -1271,7 +1271,7 @@ static PaError BuildDeviceList( PaAlsaHostApiRepresentation *alsaApi, void** sca
 #ifdef PA_ENABLE_DEBUG_OUTPUT
     PaTime startTime = PaUtil_GetTime();
 #endif
-    PaLinuxScanDeviceInfosResults* out = NULL;
+    PaAlsaScanDeviceInfosResults* out = NULL;
 
     if( getenv( "PA_ALSA_INITIALIZE_BLOCK" ) && atoi( getenv( "PA_ALSA_INITIALIZE_BLOCK" ) ) )
         blocking = 0;
@@ -1447,8 +1447,8 @@ static PaError BuildDeviceList( PaAlsaHostApiRepresentation *alsaApi, void** sca
     else
         PA_DEBUG(( "%s: Iterating over ALSA plugins failed: %s\n", __FUNCTION__, alsa_snd_strerror( res ) ));
 
-    out = (PaLinuxScanDeviceInfosResults *) PaUtil_GroupAllocateMemory(
-                            alsaApi->allocations, sizeof(PaLinuxScanDeviceInfosResults) );
+    out = (PaAlsaScanDeviceInfosResults *) PaUtil_GroupAllocateMemory(
+                            alsaApi->allocations, sizeof(PaAlsaScanDeviceInfosResults) );
 
     out->defaultInputDevice = paNoDevice;
     out->defaultOutputDevice = paNoDevice;
@@ -4688,7 +4688,7 @@ static PaError CommitDeviceInfos(struct PaUtilHostApiRepresentation *hostApi, Pa
 
     if( scanResults != NULL )
     {
-        PaLinuxScanDeviceInfosResults *scanDeviceInfosResults = ( PaLinuxScanDeviceInfosResults * ) scanResults;
+        PaAlsaScanDeviceInfosResults *scanDeviceInfosResults = ( PaAlsaScanDeviceInfosResults * ) scanResults;
 
         if( deviceCount > 0 )
         {
@@ -4711,7 +4711,7 @@ static PaError DisposeDeviceInfos(struct PaUtilHostApiRepresentation *hostApi, v
 
     if( scanResults != NULL )
     {
-        PaLinuxScanDeviceInfosResults *scanDeviceInfosResults = ( PaLinuxScanDeviceInfosResults * ) scanResults;
+        PaAlsaScanDeviceInfosResults *scanDeviceInfosResults = ( PaAlsaScanDeviceInfosResults * ) scanResults;
         if( scanDeviceInfosResults->deviceInfos )
         {
             /* all device info structs are allocated in a block so we can destroy them here */
