@@ -150,8 +150,8 @@ static void* thread_fcn(void* data)
 
 void PaUtil_InitializeHotPlug()
 {
-#if PA_USE_ALSA
   pthread_mutex_init(&g_mutex, NULL);
+#if PA_USE_ALSA
   g_run = 1;
   pthread_create(&g_thread_id, NULL, thread_fcn, NULL);
 #endif
@@ -164,8 +164,8 @@ void PaUtil_TerminateHotPlug()
 
   g_run = 0;
   pthread_join(g_thread_id, &ret); 
-  pthread_mutex_destroy(&g_mutex);
 #endif
+  pthread_mutex_destroy(&g_mutex);
 }
 
 void PaUtil_LockHotPlug()
