@@ -567,7 +567,7 @@ PaError WriteStream( PaStream* stream,
 
     if ( macStream->state == STOPPING )
     {
-        ret = paStreamIsStopping;
+        ret = paInternalError;
     }
     else if (ret == paNoError )
     {

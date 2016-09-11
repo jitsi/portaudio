@@ -134,8 +134,7 @@ typedef enum PaErrorCode
     paCanNotReadFromAnOutputOnlyStream,
     paCanNotWriteToAnInputOnlyStream,
     paIncompatibleStreamHostApi,
-    paBadBufferPtr,
-    paStreamIsStopping
+    paBadBufferPtr
 } PaErrorCode;
 
 
@@ -1152,9 +1151,7 @@ PaError Pa_ReadStream( PaStream* stream,
 
  @return On success PaNoError will be returned,
  or paOutputUnderflowed if additional output data was inserted after the
- previous call and before this call,
- or paStreamIsStopping if Pa_StopStream() or Pa_AbortStream() is being called
- in another thread.
+ previous call and before this call.
 */
 PaError Pa_WriteStream( PaStream* stream,
                         const void *buffer,

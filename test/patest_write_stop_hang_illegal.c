@@ -55,12 +55,17 @@
 static float s_buffer[FRAMES_PER_BUFFER][2]; /* stereo output buffer */
 
 /**
- * PortAudio is not considered thread safe. So do not call
- * PortAudio from multiple threads without synchronization.
- *
- * But we don't want to hang if PA is stopped or aborted from another thread.
- * So try stopping PA from another thread to see if it hangs.
+ * WARNING: PortAudio is NOT thread safe. DO NOT call PortAudio
+ * from multiple threads without synchronization. This test uses
+ * PA in an ILLEGAL WAY in order to try to flush out potential hang bugs.
+ * The test calls Pa_WriteStream() and Pa_StopStream() simultaneously
+ * from separate threads in order to try to cause Pa_StopStream() to hang.
  * In the main thread we write to the stream in a loop.
+ * Then try stopping PA from another thread to see if it hangs.
+ *
+ * @note: Do not expect this test to pass. The test is only here
+ * as a debugging aid for hang bugs. Since this test uses PA in an
+ * illegal way, it may fail for reasons that are not PA bugs.
  */
 
 /* Wait for awhile then abort the stream. */
@@ -77,6 +82,7 @@ void *stop_thread_proc(void *arg)
     }
     printf("Call Pa_StopStream()\n");
     fflush(stdout);
+    /* ILLEGAL unsynchronised call to PA, see comment above */
     PaError err = Pa_StopStream( stream );
     printf("Pa_StopStream() returned %d\n", err);
     fflush(stdout);
