@@ -204,6 +204,7 @@ _PA_DEFINE_FUNC(snd_ctl_card_info_free);
 _PA_DEFINE_FUNC(snd_ctl_card_info);
 _PA_DEFINE_FUNC(snd_ctl_card_info_sizeof);
 _PA_DEFINE_FUNC(snd_ctl_card_info_get_name);
+_PA_DEFINE_FUNC(snd_ctl_card_info_get_longname);
 #define alsa_snd_ctl_card_info_alloca(ptr) __alsa_snd_alloca(ptr, snd_ctl_card_info)
 
 _PA_DEFINE_FUNC(snd_config);
@@ -482,6 +483,7 @@ static int PaAlsa_LoadLibrary()
     _PA_LOAD_FUNC(snd_ctl_card_info);
     _PA_LOAD_FUNC(snd_ctl_card_info_sizeof);
     _PA_LOAD_FUNC(snd_ctl_card_info_get_name);
+    _PA_LOAD_FUNC(snd_ctl_card_info_get_longname);
 
     _PA_LOAD_FUNC(snd_config);
     _PA_LOAD_FUNC(snd_config_update);
@@ -677,6 +679,7 @@ typedef struct PaAlsaDeviceInfo
 {
     PaDeviceInfo baseDeviceInfo;
     char *alsaName;
+    char *alsaLongCardName;
     int isPlug;
     int minInputChannels;
     int minOutputChannels;
@@ -1008,6 +1011,7 @@ static PaUint32 PaAlsaVersionNum(void)
 typedef struct
 {
     char *alsaName;
+    char *alsaLongCardName;
     char *name;
     int isPlug;
     int hasPlayback;
@@ -1171,6 +1175,35 @@ static int OpenPcm( snd_pcm_t **pcmp, const char *name, snd_pcm_stream_t stream,
     return ret;
 }
 
+/**
+ * Generate a connection id that is persistent across calls to ScanDeviceInfos().
+ * An existing connection id is reused if
+ * - the device was previously initialized,
+ * - the ALSA longname of the card matches
+ * - and the name of the device matches.
+ *
+ * Otherwise a new id is generated with PaUtil_MakeDeviceConnectionId().
+ * Disconnecting and reconnecting a device always generates a new id.
+ */
+static PaDeviceConnectionId MakeDeviceConnectionId( PaUtilHostApiRepresentation *hostApi,
+                                                    HwDevInfo* deviceHwInfo)
+{
+    if( hostApi->deviceInfos && hostApi->info.deviceCount > 0 )
+    {
+        for( int i = 0; i < hostApi->info.deviceCount; ++i )
+        {
+            PaAlsaDeviceInfo* alsaDevInfo = (PaAlsaDeviceInfo*)hostApi->deviceInfos[i];
+            if( strcmp( alsaDevInfo->alsaLongCardName, deviceHwInfo->alsaLongCardName ) == 0
+                    && strcmp( alsaDevInfo->alsaName, deviceHwInfo->alsaName ) == 0)
+            {
+                return alsaDevInfo->baseDeviceInfo.connectionId;
+            }
+        }
+    }
+
+    return PaUtil_MakeDeviceConnectionId();
+}
+
 static PaError FillInDevInfo( PaAlsaHostApiRepresentation *alsaApi, HwDevInfo* deviceHwInfo, int blocking,
         PaAlsaDeviceInfo* devInfo, int* devIdx, PaAlsaScanDeviceInfosResults* out )
 {
@@ -1214,9 +1247,10 @@ static PaError FillInDevInfo( PaAlsaHostApiRepresentation *alsaApi, HwDevInfo* d
     baseDeviceInfo->structVersion = 3;
     baseDeviceInfo->hostApi = alsaApi->hostApiIndex;
     baseDeviceInfo->name = deviceHwInfo->name;
-    baseDeviceInfo->connectionId = PaUtil_MakeDeviceConnectionId();
+    baseDeviceInfo->connectionId = MakeDeviceConnectionId( baseApi, deviceHwInfo );
 
     devInfo->alsaName = deviceHwInfo->alsaName;
+    devInfo->alsaLongCardName = deviceHwInfo->alsaLongCardName;
     devInfo->isPlug = deviceHwInfo->isPlug;
 
     /* A: Storing pointer to PaAlsaDeviceInfo object as pointer to PaDeviceInfo object.
@@ -1298,6 +1332,7 @@ static PaError BuildDeviceList( PaAlsaHostApiRepresentation *alsaApi, void** sca
     while( alsa_snd_card_next( &cardIdx ) == 0 && cardIdx >= 0 )
     {
         char *cardName;
+        char *longCardName;
         int devIdx = -1;
         snd_ctl_t *ctl;
         char buf[50];
@@ -1314,6 +1349,7 @@ static PaError BuildDeviceList( PaAlsaHostApiRepresentation *alsaApi, void** sca
         alsa_snd_ctl_card_info( ctl, cardInfo );
 
         PA_ENSURE( PaAlsa_StrDup( alsaApi, &cardName, alsa_snd_ctl_card_info_get_name( cardInfo )) );
+        PA_ENSURE( PaAlsa_StrDup( alsaApi, &longCardName, alsa_snd_ctl_card_info_get_longname( cardInfo )) );
 
         while( alsa_snd_ctl_pcm_next_device( ctl, &devIdx ) == 0 && devIdx >= 0 )
         {
@@ -1363,6 +1399,7 @@ static PaError BuildDeviceList( PaAlsaHostApiRepresentation *alsaApi, void** sca
             PA_ENSURE( PaAlsa_StrDup( alsaApi, &alsaDeviceName, buf ) );
 
             hwDevInfos[ numDeviceNames - 1 ].alsaName = alsaDeviceName;
+            hwDevInfos[ numDeviceNames - 1 ].alsaLongCardName = longCardName;
             hwDevInfos[ numDeviceNames - 1 ].name = deviceName;
             hwDevInfos[ numDeviceNames - 1 ].isPlug = usePlughw;
             hwDevInfos[ numDeviceNames - 1 ].hasPlayback = hasPlayback;
@@ -1429,6 +1466,7 @@ static PaError BuildDeviceList( PaAlsaHostApiRepresentation *alsaApi, void** sca
             predefined = FindDeviceName( alsaDeviceName );
 
             hwDevInfos[numDeviceNames - 1].alsaName = alsaDeviceName;
+            hwDevInfos[numDeviceNames - 1].alsaLongCardName = "snd-pcm-plugin";
             hwDevInfos[numDeviceNames - 1].name     = deviceName;
             hwDevInfos[numDeviceNames - 1].isPlug   = 1;
 
