@@ -3793,6 +3793,11 @@ static PaError PaAlsaStream_WaitForFrames( PaAlsaStream *self, unsigned long *fr
                     framesAvail, &xrun ) );
         if( xrun )
         {
+            if( *framesAvail == 0 )
+            {
+                result = paInternalError;
+            }
+
             goto end;
         }
 
@@ -3842,6 +3847,8 @@ static PaError PaAlsaStream_WaitForFrames( PaAlsaStream *self, unsigned long *fr
                 continue;
             }
 
+            result = paInternalError;
+
             /* TODO: Add macro for checking system calls */
             PA_ENSURE( paInternalError );
         }
@@ -3867,6 +3874,7 @@ static PaError PaAlsaStream_WaitForFrames( PaAlsaStream *self, unsigned long *fr
                 xrun = 1; /* try recovering device */
 
                 PA_DEBUG(( "%s: poll timed out\n", __FUNCTION__, timeouts ));
+                result = paTimedOut;
                 goto end;/*PA_ENSURE( paTimedOut );*/
             }
         }
