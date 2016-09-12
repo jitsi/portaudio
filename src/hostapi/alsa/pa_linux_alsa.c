@@ -3610,6 +3610,18 @@ static PaError PaAlsaStreamComponent_GetAvailableFrames( PaAlsaStreamComponent *
     snd_pcm_sframes_t framesAvail = alsa_snd_pcm_avail_update( self->pcm );
     *xrunOccurred = 0;
 
+    /* Get pcm_state and check for xrun condition. On playback I often see
+     * xrun but avail_update does not return -EPIPE but framesAvail larger
+     * than bufferSize. In case of xrun status set xrun flag, leave framesize
+     * as reported by avail_update, will be fixed below. In case avail_update
+     * returns -EPIPE process as usual.
+     */
+    snd_pcm_state_t state = snd_pcm_state( self->pcm );
+    if( state == SND_PCM_STATE_XRUN)
+    {
+        *xrunOccurred = 1;
+    }
+
     if( -EPIPE == framesAvail )
     {
         *xrunOccurred = 1;
@@ -3618,6 +3630,12 @@ static PaError PaAlsaStreamComponent_GetAvailableFrames( PaAlsaStreamComponent *
     else
     {
         ENSURE_( framesAvail, paUnanticipatedHostError );
+    }
+
+    /* Fix frames avail, should not be bigger than bufferSize wd-xxx */
+    if( framesAvail > self->alsaBufferSize )
+    {
+        framesAvail = self->alsaBufferSize;
     }
 
     *numFrames = framesAvail;
@@ -3668,8 +3686,10 @@ static PaError PaAlsaStreamComponent_EndPolling( PaAlsaStreamComponent* self, st
 
         *shouldPoll = 0;
     }
-    else /* (A zero revent occurred) */
-        /* Work around an issue with Alsa older than 1.0.16 using some plugins (eg default with plug + dmix) where
+    else
+    {
+        /* (A zero revent occurred)
+         * Work around an issue with Alsa older than 1.0.16 using some plugins (eg default with plug + dmix) where
          * POLLIN or POLLOUT are zeroed by Alsa-lib if _mmap_avail() is a few frames short of avail_min at period
          * boundary, possibly due to erratic dma interrupts at period boundary?  Treat as a valid event.
          */
@@ -3678,6 +3698,11 @@ static PaError PaAlsaStreamComponent_EndPolling( PaAlsaStreamComponent* self, st
             self->ready = 1;
             *shouldPoll = 0;
         }
+
+        // now check for xrun
+        unsigned long framesAvail = 0;
+        PaAlsaStreamComponent_GetAvailableFrames( self, &framesAvail, xrun );
+    }
 
 error:
     return result;
@@ -4399,8 +4424,26 @@ static PaError ReadStream( PaStream* s, void *buffer, unsigned long frames )
     {
         int xrun = 0;
         PA_ENSURE( PaAlsaStream_WaitForFrames( stream, &framesAvail, &xrun ) );
-        framesGot = PA_MIN( framesAvail, frames );
 
+        /* In case of overrun WaitForFrames leaves the capture stream in STATE_PREPARED
+         * most of the time. handleXrun() restarts the ALSA stream only in case
+         * snd_pcm_recover() fails, which usually does not happen.
+         * Here we start the pcm stream again and go for another try. Another
+         * option is: set result to paOverrun and return to caller. Then
+         * the caller needs to call ReadStream again. This takes more time and
+         * we lose even more frames.
+         */
+        if( xrun )
+        {
+            if ( snd_pcm_state( stream->capture.pcm ) == SND_PCM_STATE_PREPARED )
+            {
+                ENSURE_( snd_pcm_start( stream->capture.pcm ), paUnanticipatedHostError );
+            }
+
+            continue;
+        }
+
+        framesGot = PA_MIN( framesAvail, frames );
         PA_ENSURE( PaAlsaStream_SetUpBuffers( stream, &framesGot, &xrun ) );
         if( framesGot > 0 )
         {
