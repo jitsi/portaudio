@@ -711,6 +711,8 @@ static PaError CommitDeviceInfos(struct PaUtilHostApiRepresentation *hostApi, Pa
         void *deviceInfos, int deviceCount);
 static PaError DisposeDeviceInfos(struct PaUtilHostApiRepresentation *hostApi, void *deviceInfos,
         int deviceCount );
+static void FreeDeviceInfos( PaUtilAllocationGroup *allocations, PaDeviceInfo **deviceInfos,
+        int deviceCount );
 
 /* Callback prototypes */
 static void *CallbackThreadFunc( void *userData );
@@ -1172,7 +1174,16 @@ static PaError FillInDevInfo( PaAlsaHostApiRepresentation *alsaApi, HwDevInfo* d
             PA_DEBUG(("Default output device: %s\n", deviceName->name));
         }
         PA_DEBUG(("%s: Adding device %s: %d\n", __FUNCTION__, deviceName->name, *devIdx));
-        out->deviceInfos[*devIdx] = (PaDeviceInfo *) devInfo;
+
+        // We need to copy the devInfo structure so the deviceInfos can be free'd
+        // later on. Without the copy and the first (i.e. devIdx == 0) assigned
+        // devInfo is not the first alsa device, free'ing would happen on an
+        // invalid pointer.
+        PA_UNLESS( out->deviceInfos[*devIdx] = (PaDeviceInfo*)PaUtil_GroupAllocateMemory(
+            alsaApi->allocations, sizeof(PaAlsaDeviceInfo) ), paInsufficientMemory );
+        memcpy( out->deviceInfos[*devIdx], devInfo, sizeof(PaAlsaDeviceInfo) );
+        PA_ENSURE( PaAlsa_StrDup( alsaApi, (char **)&out->deviceInfos[*devIdx]->name, baseDeviceInfo->name ) );
+        PA_ENSURE( PaAlsa_StrDup( alsaApi, &((PaAlsaDeviceInfo*)out->deviceInfos[*devIdx])->alsaName, deviceName->alsaName ) );
         (*devIdx) += 1;
     }
     else
@@ -1180,6 +1191,7 @@ static PaError FillInDevInfo( PaAlsaHostApiRepresentation *alsaApi, HwDevInfo* d
     	PA_DEBUG(( "%s: skipped device: %s, all channels - 0\n", __FUNCTION__, deviceName->name ));
     }
 
+error:
 end:
     return result;
 }
@@ -1188,7 +1200,6 @@ end:
 static PaError BuildDeviceList( PaAlsaHostApiRepresentation *alsaApi, void** scanResults, int* count)
 {
     PaUtilHostApiRepresentation *baseApi = &alsaApi->baseHostApiRep;
-    PaLinuxScanDeviceInfosResults *outArgument = NULL;
     PaAlsaDeviceInfo *deviceInfoArray;
     int cardIdx = -1, devIdx = 0;
     snd_ctl_card_info_t *cardInfo;
@@ -1292,6 +1303,7 @@ static PaError BuildDeviceList( PaAlsaHostApiRepresentation *alsaApi, void** sca
             hwDevInfos[ numDeviceNames - 1 ].hasCapture = hasCapture;
         }
         alsa_snd_ctl_close( ctl );
+        PaUtil_GroupFreeMemory( alsaApi->allocations, cardName );
     }
 
     /* Iterate over plugin devices */
@@ -1419,6 +1431,13 @@ static PaError BuildDeviceList( PaAlsaHostApiRepresentation *alsaApi, void** sca
         PA_ENSURE( FillInDevInfo( alsaApi, hwInfo, blocking, devInfo,
                     &devIdx, out ) );
     }
+
+    for( i = 0; i < numDeviceNames; ++i )
+    {
+        HwDevInfo* hwInfo = &hwDevInfos[i];
+        PaUtil_GroupFreeMemory( alsaApi->allocations, hwInfo->name );
+        PaUtil_GroupFreeMemory( alsaApi->allocations, hwInfo->alsaName );
+    }
     free( hwDevInfos );
 
     out->deviceCount = devIdx;   /* Number of successfully queried devices */
@@ -1430,10 +1449,20 @@ static PaError BuildDeviceList( PaAlsaHostApiRepresentation *alsaApi, void** sca
 #endif
 
 end:
+    if( deviceInfoArray )
+    {
+        PaUtil_GroupFreeMemory( alsaApi->allocations, deviceInfoArray );
+    }
+
     return result;
 
 error:
-    /* No particular action */
+    if( out )
+    {
+        FreeDeviceInfos( alsaApi->allocations, out->deviceInfos, devIdx );
+        out->deviceInfos = NULL;
+    }
+
     goto end;
 }
 
@@ -4656,8 +4685,7 @@ static PaError CommitDeviceInfos(struct PaUtilHostApiRepresentation *hostApi, Pa
     if( hostApi->deviceInfos )
     {
         /* all device info structs are allocated in a block so we can destroy them here */
-        PaUtil_GroupFreeMemory( alsaHostApi->allocations, hostApi->deviceInfos[0] );
-        PaUtil_GroupFreeMemory( alsaHostApi->allocations, hostApi->deviceInfos );
+        FreeDeviceInfos( alsaHostApi->allocations, hostApi->deviceInfos, hostApi->info.deviceCount );
         hostApi->deviceInfos = NULL;
     }
 
@@ -4680,6 +4708,28 @@ static PaError CommitDeviceInfos(struct PaUtilHostApiRepresentation *hostApi, Pa
     return result;    
 }
 
+static void FreeDeviceInfos( PaUtilAllocationGroup *allocations,
+                             PaDeviceInfo **deviceInfos, int deviceCount )
+{
+    if( deviceInfos )
+    {
+        if( deviceInfos[0] )
+        {
+            int i;
+            for( i = 0; i < deviceCount; ++i )
+            {
+                PaAlsaDeviceInfo *alsaDeviceInfo = (PaAlsaDeviceInfo*)deviceInfos[ i ];
+                PaUtil_GroupFreeMemory( allocations, alsaDeviceInfo->alsaName );
+                alsaDeviceInfo->alsaName = NULL;
+            }
+
+            PaUtil_GroupFreeMemory( allocations, deviceInfos[0] );
+        }
+
+        PaUtil_GroupFreeMemory( allocations, deviceInfos );
+    }
+}
+
 static PaError DisposeDeviceInfos(struct PaUtilHostApiRepresentation *hostApi, void *scanResults, int deviceCount)
 {
     PaAlsaHostApiRepresentation *alsaHostApi = (PaAlsaHostApiRepresentation*)hostApi;
@@ -4689,9 +4739,8 @@ static PaError DisposeDeviceInfos(struct PaUtilHostApiRepresentation *hostApi, v
         PaLinuxScanDeviceInfosResults *scanDeviceInfosResults = ( PaLinuxScanDeviceInfosResults * ) scanResults;
         if( scanDeviceInfosResults->deviceInfos )
         {
-            /* all device info structs are allocated in a block so we can destroy them here */
-            PaUtil_GroupFreeMemory( alsaHostApi->allocations, scanDeviceInfosResults->deviceInfos[0] );
-            PaUtil_GroupFreeMemory( alsaHostApi->allocations, scanDeviceInfosResults->deviceInfos );
+            FreeDeviceInfos( alsaHostApi->allocations, scanDeviceInfosResults->deviceInfos, deviceCount );
+            scanDeviceInfosResults->deviceInfos = NULL;
         }
 
         PaUtil_GroupFreeMemory(alsaHostApi->allocations, scanDeviceInfosResults );
@@ -4699,4 +4748,3 @@ static PaError DisposeDeviceInfos(struct PaUtilHostApiRepresentation *hostApi, v
 
     return paNoError;
 }
-
