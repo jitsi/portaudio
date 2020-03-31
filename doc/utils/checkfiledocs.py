@@ -1,3 +1,5 @@
+from __future__ import print_function
+
 import os
 import os.path
 import string
@@ -52,8 +54,8 @@ def printError( f, message ):
     global currentFile
     if f != currentFile:
         currentFile = f
-        print f, ":"
-    print "\t!", message
+        print(f, ":")
+    print("\t!", message)
 
 
 for f in sourceFiles:
