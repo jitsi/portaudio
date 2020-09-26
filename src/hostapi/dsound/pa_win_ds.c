@@ -1852,9 +1852,9 @@ static void CalculateBufferSettings( unsigned long *hostBufferSizeFrames,
     
     if( userFramesPerBuffer == paFramesPerBufferUnspecified )
     {
-        unsigned long suggestedLatencyFrames = max( suggestedInputLatencyFrames, suggestedOutputLatencyFrames );
+        unsigned long targetBufferingLatencyFrames = max( suggestedInputLatencyFrames, suggestedOutputLatencyFrames );
 
-        *pollingPeriodFrames = suggestedLatencyFrames / 4;
+        *pollingPeriodFrames = targetBufferingLatencyFrames / 4;
         if( *pollingPeriodFrames < minimumPollingPeriodFrames )
         {
             *pollingPeriodFrames = minimumPollingPeriodFrames;
@@ -1865,14 +1865,14 @@ static void CalculateBufferSettings( unsigned long *hostBufferSizeFrames,
         }
 
         *hostBufferSizeFrames = *pollingPeriodFrames 
-                + max( *pollingPeriodFrames + pollingJitterFrames, suggestedLatencyFrames);
+                + max( *pollingPeriodFrames + pollingJitterFrames, targetBufferingLatencyFrames);
     }
     else
     {
-        unsigned long suggestedLatencyFrames = suggestedInputLatencyFrames;
+        unsigned long targetBufferingLatencyFrames = suggestedInputLatencyFrames;
         if( isFullDuplex )
         {
-            /* in full duplex streams we know that the buffer adapter adds userFramesPerBuffer
+            /* In full duplex streams we know that the buffer adapter adds userFramesPerBuffer
                extra fixed latency. so we subtract it here as a fixed latency before computing
                the buffer size. being careful not to produce an unrepresentable negative result.
                
@@ -1886,21 +1886,21 @@ static void CalculateBufferSettings( unsigned long *hostBufferSizeFrames,
                         suggestedOutputLatencyFrames - userFramesPerBuffer;
 
                 /* maximum of input and adjusted output suggested latency */
-                if( adjustedSuggestedOutputLatencyFrames > suggestedInputLatencyFrames )
-                    suggestedLatencyFrames = adjustedSuggestedOutputLatencyFrames;
+                if( adjustedSuggestedOutputLatencyFrames > targetBufferingLatencyFrames )
+                    targetBufferingLatencyFrames = adjustedSuggestedOutputLatencyFrames;
             }
         }
         else
         {
             /* maximum of input and output suggested latency */
             if( suggestedOutputLatencyFrames > suggestedInputLatencyFrames )
-                suggestedLatencyFrames = suggestedOutputLatencyFrames;
+                targetBufferingLatencyFrames = suggestedOutputLatencyFrames;
         }   
 
         *hostBufferSizeFrames = userFramesPerBuffer 
-                + max( userFramesPerBuffer + pollingJitterFrames, suggestedLatencyFrames);
+                + max( userFramesPerBuffer + pollingJitterFrames, targetBufferingLatencyFrames);
 
-        *pollingPeriodFrames = max( max(1, userFramesPerBuffer / 4), suggestedLatencyFrames / 16 );
+        *pollingPeriodFrames = max( max(1, userFramesPerBuffer / 4), targetBufferingLatencyFrames / 16 );
 
         if( *pollingPeriodFrames > maximumPollingPeriodFrames )
         {
@@ -2511,7 +2511,8 @@ static int TimeSlice( PaWinDsStream *stream )
     long              bytesProcessed;
     HRESULT           hresult;
     double            outputLatency = 0;
-    PaStreamCallbackTimeInfo timeInfo = {0,0,0}; /** @todo implement inputBufferAdcTime */
+    double            inputLatency = 0;
+    PaStreamCallbackTimeInfo timeInfo = {0,0,0};
     
 /* Input */
     LPBYTE            lpInBuf1 = NULL;
@@ -2540,11 +2541,12 @@ static int TimeSlice( PaWinDsStream *stream )
             filled = readPos - stream->readOffset;
             if( filled < 0 ) filled += stream->inputBufferSizeBytes; // unwrap offset
             bytesFilled = filled;
+
+            inputLatency = ((double)bytesFilled) * stream->secondsPerHostByte;
         }
             // FIXME: what happens if IDirectSoundCaptureBuffer_GetCurrentPosition fails?
 
         framesToXfer = numInFramesReady = bytesFilled / stream->inputFrameSizeBytes; 
-        outputLatency = ((double)bytesFilled) * stream->secondsPerHostByte;  // FIXME: this doesn't look right. we're calculating output latency in input branch. also secondsPerHostByte is only initialized for the output stream
 
         /** @todo Check for overflow */
     }
@@ -2559,6 +2561,14 @@ static int TimeSlice( PaWinDsStream *stream )
         /* Check for underflow */
         if( stream->outputUnderflowCount != previousUnderflowCount )
             stream->callbackFlags |= paOutputUnderflow;
+
+        /* We are about to compute audio into the first byte of empty space in the output buffer.
+           This audio will reach the DAC after all of the current (non-empty) audio
+           in the buffer has played. Therefore the output time is the current time
+           plus the time it takes to play the non-empty bytes in the buffer,
+           computed here:
+        */
+        outputLatency = ((double)(stream->outputBufferSizeBytes - bytesEmpty)) * stream->secondsPerHostByte;
     }
 
     /* if it's a full duplex stream, set framesToXfer to the minimum of input and output frames ready */
@@ -2574,8 +2584,6 @@ static int TimeSlice( PaWinDsStream *stream )
     /* The outputBufferDacTime parameter should indicates the time at which
         the first sample of the output buffer is heard at the DACs. */
         timeInfo.currentTime = PaUtil_GetTime();
-        timeInfo.outputBufferDacTime = timeInfo.currentTime + outputLatency; // FIXME: QueryOutputSpace gets the playback position, we could use that (?)
-
 
         PaUtil_BeginBufferProcessing( &stream->bufferProcessor, &timeInfo, stream->callbackFlags );
         stream->callbackFlags = 0;
@@ -2583,6 +2591,8 @@ static int TimeSlice( PaWinDsStream *stream )
     /* Input */
         if( stream->bufferProcessor.inputChannelCount > 0 )
         {
+            timeInfo.inputBufferAdcTime = timeInfo.currentTime - inputLatency; 
+
             bytesToXfer = framesToXfer * stream->inputFrameSizeBytes;
             hresult = IDirectSoundCaptureBuffer_Lock ( stream->pDirectSoundInputBuffer,
                 stream->readOffset, bytesToXfer,
@@ -2612,6 +2622,13 @@ static int TimeSlice( PaWinDsStream *stream )
     /* Output */
         if( stream->bufferProcessor.outputChannelCount > 0 )
         {
+            /*
+			We don't currently add outputLatency here because it appears to produce worse
+			results than non adding it. Need to do more testing to verify this.
+            */
+            /* timeInfo.outputBufferDacTime = timeInfo.currentTime + outputLatency; */
+            timeInfo.outputBufferDacTime = timeInfo.currentTime;
+
             bytesToXfer = framesToXfer * stream->outputFrameSizeBytes;
             hresult = IDirectSoundBuffer_Lock ( stream->pDirectSoundOutputBuffer,
                 stream->outputBufferWriteOffsetBytes, bytesToXfer,
