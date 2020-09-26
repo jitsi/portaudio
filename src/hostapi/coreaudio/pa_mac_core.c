@@ -696,7 +696,7 @@ static PaError InitializeDeviceInfo( PaMacAUHAL *auhalHostApi,
 
     VVDBUG(("InitializeDeviceInfo(): macCoreDeviceId=%ld\n", macCoreDeviceId));
 
-    memset(deviceInfo, 0, sizeof(deviceInfo));
+    memset(deviceInfo, 0, sizeof(PaDeviceInfo));
 
     deviceInfo->structVersion = 3;
     deviceInfo->hostApi = hostApiIndex;

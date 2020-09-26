@@ -211,9 +211,9 @@ static signed long GetStreamWriteAvailable( PaStream* stream );
     PaUtil_SetLastHostErrorInfo( paDirectSound, hr, "DirectSound error" )
 
 /************************************************* DX Prototypes **********/
-static BOOL CALLBACK CollectGUIDsProc(LPGUID lpGUID,
-                                     LPCTSTR lpszDesc,
-                                     LPCTSTR lpszDrvName,
+static BOOL CALLBACK CollectGUIDsProcA(LPGUID lpGUID,
+                                     LPCSTR lpszDesc,
+                                     LPCSTR lpszDrvName,
                                      LPVOID lpContext );
 
 /************************************************************************************/
@@ -376,7 +376,7 @@ static double PaWinDs_GetMinLatencySeconds( double sampleRate )
     double    minLatencySeconds = 0;
 
     /* Let user determine minimal latency by setting environment variable. */
-    hresult = GetEnvironmentVariable( PA_LATENCY_ENV_NAME, envbuf, PA_ENV_BUF_SIZE );
+    hresult = GetEnvironmentVariableA( PA_LATENCY_ENV_NAME, envbuf, PA_ENV_BUF_SIZE );
     if( (hresult > 0) && (hresult < PA_ENV_BUF_SIZE) )
     {
         minLatencySeconds = atoi( envbuf ) * SECONDS_PER_MSEC;
@@ -522,9 +522,9 @@ static PaError TerminateDSDeviceNameAndGUIDVector( DSDeviceNameAndGUIDVector *gu
 /************************************************************************************
 ** Collect preliminary device information during DirectSound enumeration 
 */
-static BOOL CALLBACK CollectGUIDsProc(LPGUID lpGUID,
-                                     LPCTSTR lpszDesc,
-                                     LPCTSTR lpszDrvName,
+static BOOL CALLBACK CollectGUIDsProcA(LPGUID lpGUID,
+                                     LPCSTR lpszDesc,
+                                     LPCSTR lpszDrvName,
                                      LPVOID lpContext )
 {
     DSDeviceNameAndGUIDVector *namesAndGUIDs = (DSDeviceNameAndGUIDVector*)lpContext;
@@ -590,29 +590,38 @@ static BOOL CALLBACK KsPropertySetEnumerateCallback( PDSPROPERTY_DIRECTSOUNDDEVI
     int i;
     DSDeviceNamesAndGUIDs *deviceNamesAndGUIDs = (DSDeviceNamesAndGUIDs*)context;
 
-    if( data->DataFlow == DIRECTSOUNDDEVICE_DATAFLOW_RENDER )
+    /*
+        Apparently data->Interface can be NULL in some cases.
+        Possibly virtual devices without hardware.
+        So we check for NULLs now. See mailing list message November 10, 2012:
+        "[Portaudio] portaudio initialization crash in KsPropertySetEnumerateCallback(pa_win_ds.c)"
+    */
+    if( data->Interface )
     {
-        for( i=0; i < deviceNamesAndGUIDs->outputNamesAndGUIDs.count; ++i )
+        if( data->DataFlow == DIRECTSOUNDDEVICE_DATAFLOW_RENDER )
         {
-            if( deviceNamesAndGUIDs->outputNamesAndGUIDs.items[i].lpGUID
-                && memcmp( &data->DeviceId, deviceNamesAndGUIDs->outputNamesAndGUIDs.items[i].lpGUID, sizeof(GUID) ) == 0 )
+            for( i=0; i < deviceNamesAndGUIDs->outputNamesAndGUIDs.count; ++i )
             {
-                deviceNamesAndGUIDs->outputNamesAndGUIDs.items[i].pnpInterface = 
+                if( deviceNamesAndGUIDs->outputNamesAndGUIDs.items[i].lpGUID
+                    && memcmp( &data->DeviceId, deviceNamesAndGUIDs->outputNamesAndGUIDs.items[i].lpGUID, sizeof(GUID) ) == 0 )
+                {
+                    deviceNamesAndGUIDs->outputNamesAndGUIDs.items[i].pnpInterface =
                         (char*)DuplicateWCharString( deviceNamesAndGUIDs->winDsHostApi->allocations, data->Interface );
-                break;
+                    break;
+                }
             }
         }
-    }
-    else if( data->DataFlow == DIRECTSOUNDDEVICE_DATAFLOW_CAPTURE )
-    {
-        for( i=0; i < deviceNamesAndGUIDs->inputNamesAndGUIDs.count; ++i )
+        else if( data->DataFlow == DIRECTSOUNDDEVICE_DATAFLOW_CAPTURE )
         {
-            if( deviceNamesAndGUIDs->inputNamesAndGUIDs.items[i].lpGUID
-                && memcmp( &data->DeviceId, deviceNamesAndGUIDs->inputNamesAndGUIDs.items[i].lpGUID, sizeof(GUID) ) == 0 )
+            for( i=0; i < deviceNamesAndGUIDs->inputNamesAndGUIDs.count; ++i )
             {
-                deviceNamesAndGUIDs->inputNamesAndGUIDs.items[i].pnpInterface = 
+                if( deviceNamesAndGUIDs->inputNamesAndGUIDs.items[i].lpGUID
+                    && memcmp( &data->DeviceId, deviceNamesAndGUIDs->inputNamesAndGUIDs.items[i].lpGUID, sizeof(GUID) ) == 0 )
+                {
+                    deviceNamesAndGUIDs->inputNamesAndGUIDs.items[i].pnpInterface =
                         (char*)DuplicateWCharString( deviceNamesAndGUIDs->winDsHostApi->allocations, data->Interface );
-                break;
+                    break;
+                }
             }
         }
     }
@@ -1425,7 +1434,7 @@ static PaError ScanDeviceInfos( struct PaUtilHostApiRepresentation *hostApi, PaH
 
     /* DSound - enumerate devices to count them and to gather their GUIDs and device names */
 
-    paWinDsDSoundEntryPoints.DirectSoundCaptureEnumerateA( (LPDSENUMCALLBACK)CollectGUIDsProc, (void *)&deviceNamesAndGUIDs.inputNamesAndGUIDs );
+    paWinDsDSoundEntryPoints.DirectSoundCaptureEnumerateA( (LPDSENUMCALLBACKA)CollectGUIDsProcA, (void *)&deviceNamesAndGUIDs.inputNamesAndGUIDs );
 
     if( deviceNamesAndGUIDs.inputNamesAndGUIDs.enumerationError != paNoError )
     {
@@ -1433,7 +1442,7 @@ static PaError ScanDeviceInfos( struct PaUtilHostApiRepresentation *hostApi, PaH
         goto error;
     }
 
-    paWinDsDSoundEntryPoints.DirectSoundEnumerateA( (LPDSENUMCALLBACK)CollectGUIDsProc, (void *)&deviceNamesAndGUIDs.outputNamesAndGUIDs );
+    paWinDsDSoundEntryPoints.DirectSoundEnumerateA( (LPDSENUMCALLBACKA)CollectGUIDsProcA, (void *)&deviceNamesAndGUIDs.outputNamesAndGUIDs );
 
     if( deviceNamesAndGUIDs.outputNamesAndGUIDs.enumerationError != paNoError )
     {
