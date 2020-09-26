@@ -69,7 +69,7 @@ typedef enum PaWasapiFlags
              method can only provide 15-20ms latency. */
     paWinWasapiPolling                  = (1 << 3),
 
-    /* forces custom thread priority setting, must be used if PaWasapiStreamInfo::threadPriority
+    /* forces custom thread priority setting, must be used if PaWasapiStreamInfo::threadPriority 
        is set to a custom value */
     paWinWasapiThreadPriority           = (1 << 4)
 }
@@ -277,7 +277,7 @@ typedef struct PaWasapiStreamInfo
 
     /* Stream option. */
     PaWasapiStreamOption streamOption;
-}
+} 
 PaWasapiStreamInfo;
 
 

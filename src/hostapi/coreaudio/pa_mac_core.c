@@ -2023,14 +2023,13 @@ static PaError OpenStream( struct PaUtilHostApiRepresentation *hostApi,
         
        /*
         * If input and output devs are different or we are doing SR conversion,
-        * we also need a
-        * ring buffer to store inpt data while waiting for output
-        * data.
+        * we also need a ring buffer to store input data while waiting for
+        * output data.
         */
        if( (stream->outputUnit && (stream->inputUnit != stream->outputUnit))
            || stream->inputSRConverter )
        {
-          /* May want the ringSize ot initial position in
+          /* May want the ringSize or initial position in
              ring buffer to depend somewhat on sample rate change */
 
           void *data;
@@ -2053,7 +2052,15 @@ static PaError OpenStream( struct PaUtilHostApiRepresentation *hostApi,
           }
 
           /* now we can initialize the ring buffer */
-          PaUtil_InitializeRingBuffer( &stream->inputRingBuffer, szfl*inputParameters->channelCount, ringSize, data ) ;
+          result = PaUtil_InitializeRingBuffer( &stream->inputRingBuffer, szfl*inputParameters->channelCount, ringSize, data );
+          if( result != 0 )
+          {
+              /* The only reason this should fail is if ringSize is not a power of 2, which we do not anticipate happening. */
+              result = paUnanticipatedHostError;
+              free(data);
+              goto error;
+          }
+
           /* advance the read point a little, so we are reading from the
              middle of the buffer */
           if( stream->outputUnit )
@@ -2075,12 +2082,11 @@ static PaError OpenStream( struct PaUtilHostApiRepresentation *hostApi,
                                          stream->outputFramesPerBuffer,
                                          sampleRate );
        result = initializeBlioRingBuffers( &stream->blio,
-              inputParameters?inputParameters->sampleFormat:0 ,
-              outputParameters?outputParameters->sampleFormat:0 ,
-              MAX(stream->inputFramesPerBuffer,stream->outputFramesPerBuffer),
+              inputParameters ? inputParameters->sampleFormat : 0,
+              outputParameters ? outputParameters->sampleFormat : 0,
               ringSize,
-              inputParameters?inputChannelCount:0 ,
-              outputParameters?outputChannelCount:0 ) ;
+              inputParameters ? inputChannelCount : 0,
+              outputParameters ? outputChannelCount : 0 ) ;
        if( result != paNoError )
           goto error;
         
@@ -2379,9 +2385,10 @@ static OSStatus AudioIOProc( void *inRefCon,
                     INPUT_ELEMENT,
                     inNumberFrames,
                     &stream->inputAudioBufferList );
-      /* FEEDBACK: I'm not sure what to do when this call fails. There's nothing in the PA API to
-       * do about failures in the callback system. */
-      assert( !err );
+      if(err != noErr)
+      {
+        goto stop_stream;
+      }
 
       PaUtil_SetInputFrameCount( &(stream->bufferProcessor), frames );
       PaUtil_SetInterleavedInputChannels( &(stream->bufferProcessor),
@@ -2461,7 +2468,7 @@ static OSStatus AudioIOProc( void *inRefCon,
                              &size,
                              (void *)&data );
                if( err == RING_BUFFER_EMPTY )
-               { /*the ring buffer callback underflowed */
+               { /* the ring buffer callback underflowed */
                   err = 0;
                   bzero( ((char *)data) + size, sizeof(data)-size );
                   /* The ring buffer can underflow normally when the stream is stopping.
@@ -2472,8 +2479,11 @@ static OSStatus AudioIOProc( void *inRefCon,
                   }
                }
                ERR( err );
-               assert( !err );
-               
+               if(err != noErr)
+               {
+                 goto stop_stream;
+               }
+
                PaUtil_SetInputFrameCount( &(stream->bufferProcessor), frames );
                PaUtil_SetInterleavedInputChannels( &(stream->bufferProcessor),
                                    0,
@@ -2579,9 +2589,12 @@ static OSStatus AudioIOProc( void *inRefCon,
          if( err == -10874 )
             inNumberFrames /= 2;
       } while( err == -10874 && inNumberFrames > 1 );
-      /* FEEDBACK: I'm not sure what to do when this call fails */
       ERR( err );
-      assert( !err );
+      if(err != noErr)
+      {
+          goto stop_stream;
+      }
+
       if( stream->inputSRConverter || stream->outputUnit )
       {
          /* If this is duplex or we use a converter, put the data
@@ -2624,11 +2637,11 @@ static OSStatus AudioIOProc( void *inRefCon,
           * chunks, and let the BufferProcessor deal with the rest.
           *
           */
-         /*This might be too big or small depending on SR conversion*/
+         /* This might be too big or small depending on SR conversion. */
          float data[ chan * inNumberFrames ];
          OSStatus err;
          do
-         { /*Run the buffer processor until we are out of data*/
+         { /* Run the buffer processor until we are out of data. */
             UInt32 size;
             long f;
 
@@ -2641,7 +2654,11 @@ static OSStatus AudioIOProc( void *inRefCon,
                           (void *)data );
             if( err != RING_BUFFER_EMPTY )
                ERR( err );
-            assert( err == 0 || err == RING_BUFFER_EMPTY );
+            if( err != noErr && err != RING_BUFFER_EMPTY )
+            {
+                goto stop_stream;
+            }
+
 
             f = size / ( chan * sizeof(float) );
             PaUtil_SetInputFrameCount( &(stream->bufferProcessor), f );
@@ -2664,23 +2681,23 @@ static OSStatus AudioIOProc( void *inRefCon,
       }
    }
 
-   switch( callbackResult )
-   {
-   case paContinue: break;
-   case paComplete:
-   case paAbort:
-      stream->state = CALLBACK_STOPPED ;
-      if( stream->outputUnit )
-         AudioOutputUnitStop(stream->outputUnit);
-      if( stream->inputUnit )
-         AudioOutputUnitStop(stream->inputUnit);
-      break;
-   }
+    // Should we return successfully or fall through to stopping the stream?
+    if( callbackResult == paContinue )
+    {
+        PaUtil_EndCpuLoadMeasurement( &stream->cpuLoadMeasurer, framesProcessed );
+        return noErr;
+    }
 
-   PaUtil_EndCpuLoadMeasurement( &stream->cpuLoadMeasurer, framesProcessed );
-   return noErr;
+stop_stream:
+    stream->state = CALLBACK_STOPPED ;
+    if( stream->outputUnit )
+        AudioOutputUnitStop(stream->outputUnit);
+    if( stream->inputUnit )
+        AudioOutputUnitStop(stream->inputUnit);
+
+    PaUtil_EndCpuLoadMeasurement( &stream->cpuLoadMeasurer, framesProcessed );
+    return noErr;
 }
-
 
 /*
     When CloseStream() is called, the multi-api layer ensures that

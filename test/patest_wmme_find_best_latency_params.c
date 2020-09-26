@@ -111,7 +111,7 @@ static void printWindowsVersionInfo( FILE *fp )
     if( osVersionInfoEx.dwPlatformId == VER_PLATFORM_WIN32_WINDOWS ){
         switch( osVersionInfoEx.dwMinorVersion ){
             case 0: osName = "Windows 95"; break;
-            case 10: osName = "Windows 98"; break;  // could also be 98SE (I've seen code discriminate based
+            case 10: osName = "Windows 98"; break;  // could also be 98SE (I've seen code discriminate based 
                                                     // on osInfo.Version.Revision.ToString() == "2222A")
             case 90: osName = "Windows Me"; break;
         }
@@ -143,7 +143,7 @@ static void printWindowsVersionInfo( FILE *fp )
                             else
                                 osName = "Windows Server 2008";
                             break;
-                        case 1:
+                        case 1: 
                             if( osVersionInfoEx.wProductType == VER_NT_WORKSTATION )
                                 osName = "Windows 7";
                             else
@@ -206,8 +206,8 @@ static void printWindowsVersionInfo( FILE *fp )
 
 
     fprintf( fp, "OS name and edition: %s %s\n", osName, osProductType );
-    fprintf( fp, "OS version: %d.%d.%d %S\n",
-                osVersionInfoEx.dwMajorVersion, osVersionInfoEx.dwMinorVersion,
+    fprintf( fp, "OS version: %d.%d.%d %S\n", 
+                osVersionInfoEx.dwMajorVersion, osVersionInfoEx.dwMinorVersion, 
                 osVersionInfoEx.dwBuildNumber, osVersionInfoEx.szCSDVersion );
     fprintf( fp, "Processor architecture: %s\n", processorArchitecture );
     fprintf( fp, "WoW64 process: %s\n", IsWow64() ? "Yes" : "No" );
@@ -292,7 +292,7 @@ static int patestCallback( const void *inputBuffer, void *outputBuffer,
 #define NO      0
 
 
-static int playUntilKeyPress( int deviceIndex, float sampleRate,
+static int playUntilKeyPress( int deviceIndex, float sampleRate, 
                              int framesPerUserBuffer, int framesPerWmmeBuffer, int wmmeBufferCount )
 {
     PaStreamParameters outputParameters;
@@ -379,7 +379,7 @@ static void usage( int wmmeHostApiIndex )
 }
 
 /*
-    ideas:
+    ideas: 
         o- could be testing with 80% CPU load
         o- could test with different channel counts
 */

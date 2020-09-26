@@ -1,7 +1,7 @@
 #!/bin/sh
 # install - install a program, script, or datafile
 
-scriptversion=2009-04-28.21; # UTC
+scriptversion=2011-11-20.07; # UTC
 
 # This originates from X11R5 (mit/util/scripts/install.sh), which was
 # later released in X11R6 (xc/config/util/install.sh) with the
@@ -35,7 +35,7 @@ scriptversion=2009-04-28.21; # UTC
 # FSF changes to this file are in the public domain.
 #
 # Calling this script install-sh is preferred over install.sh, to prevent
-# `make' implicit rules from creating a file called install from it
+# 'make' implicit rules from creating a file called install from it
 # when there is no Makefile.
 #
 # This script is compatible with the BSD install script, but was written
@@ -129,7 +129,7 @@ Environment variables override the default commands:
 "
 
 while test $# -ne 0; do
-    case $1 in
+  case $1 in
     -c) ;;
 
     -C) copy_on_change=true;;
@@ -150,12 +150,16 @@ while test $# -ne 0; do
 	esac
 	shift;;
 
-	-o) chowncmd="$chownprog $2"
+    -o) chowncmd="$chownprog $2"
 	shift;;
 
     -s) stripcmd=$stripprog;;
 
     -t) dst_arg=$2
+	# Protect names problematic for 'test' and other utilities.
+	case $dst_arg in
+	  -* | [=\(\)!]) dst_arg=./$dst_arg;;
+	esac
 	shift;;
 
     -T) no_target_directory=true;;
@@ -170,7 +174,7 @@ while test $# -ne 0; do
 
     *)  break;;
   esac
-	    shift
+  shift
 done
 
 if test $# -ne 0 && test -z "$dir_arg$dst_arg"; then
@@ -183,25 +187,33 @@ if test $# -ne 0 && test -z "$dir_arg$dst_arg"; then
       # $@ is not empty: it contains at least $arg.
       set fnord "$@" "$dst_arg"
       shift # fnord
-	    fi
+    fi
     shift # arg
     dst_arg=$arg
-done
+    # Protect names problematic for 'test' and other utilities.
+    case $dst_arg in
+      -* | [=\(\)!]) dst_arg=./$dst_arg;;
+    esac
+  done
 fi
 
 if test $# -eq 0; then
   if test -z "$dir_arg"; then
     echo "$0: no input file specified." >&2
-	exit 1
-fi
-  # It's OK to call `install-sh -d' without argument.
+    exit 1
+  fi
+  # It's OK to call 'install-sh -d' without argument.
   # This can happen when creating conditional directories.
   exit 0
 fi
 
 if test -z "$dir_arg"; then
-  trap '(exit $?); exit' 1 2 13 15
-	
+  do_exit='(exit $ret); exit $ret'
+  trap "ret=129; $do_exit" 1
+  trap "ret=130; $do_exit" 2
+  trap "ret=141; $do_exit" 13
+  trap "ret=143; $do_exit" 15
+
   # Set umask so as not to create temps with too-generous modes.
   # However, 'strip' requires both read and write access to temps.
   case $mode in
@@ -212,14 +224,14 @@ if test -z "$dir_arg"; then
     *[0-7])
       if test -z "$stripcmd"; then
 	u_plus_rw=
-	else
+      else
 	u_plus_rw='% 200'
-	fi
+      fi
       cp_umask=`expr '(' 777 - $mode % 1000 ')' $u_plus_rw`;;
     *)
       if test -z "$stripcmd"; then
 	u_plus_rw=
-else
+      else
 	u_plus_rw=,u+rw
       fi
       cp_umask=$mode$u_plus_rw;;
@@ -228,9 +240,9 @@ fi
 
 for src
 do
-  # Protect names starting with `-'.
+  # Protect names problematic for 'test' and other utilities.
   case $src in
-    -*) src=./$src;;
+    -* | [=\(\)!]) src=./$src;;
   esac
 
   if test -n "$dir_arg"; then
@@ -241,23 +253,18 @@ do
   else
 
     # Waiting for this to be detected by the "$cpprog $src $dsttmp" command
-# might cause directories to be created, which would be especially bad 
-# if $src (and thus $dsttmp) contains '*'.
+    # might cause directories to be created, which would be especially bad
+    # if $src (and thus $dsttmp) contains '*'.
     if test ! -f "$src" && test ! -d "$src"; then
       echo "$0: $src does not exist." >&2
-		exit 1
-	fi
-	
+      exit 1
+    fi
+
     if test -z "$dst_arg"; then
       echo "$0: no destination specified." >&2
-		exit 1
-	fi
-
+      exit 1
+    fi
     dst=$dst_arg
-    # Protect names starting with `-'.
-    case $dst in
-      -*) dst=./$dst;;
-    esac
 
     # If destination is a directory, append the input filename; won't work
     # if double slashes aren't ignored.
@@ -269,7 +276,7 @@ do
       dstdir=$dst
       dst=$dstdir/`basename "$src"`
       dstdir_status=0
-	else
+    else
       # Prefer dirname, but fall back on a substitute if dirname fails.
       dstdir=`
 	(dirname "$dst") 2>/dev/null ||
@@ -299,8 +306,8 @@ do
 
       test -d "$dstdir"
       dstdir_status=$?
-	fi
-fi
+    fi
+  fi
 
   obsolete_mkdir_used=false
 
@@ -343,11 +350,11 @@ fi
 
 	    if (umask $mkdir_umask &&
 		exec $mkdirprog $mkdir_mode -p -- "$tmpdir/d") >/dev/null 2>&1
-        then
+	    then
 	      if test -z "$dir_arg" || {
 		   # Check for POSIX incompatibilities with -m.
 		   # HP-UX 11.23 and IRIX 6.5 mkdir -m -p sets group- or
-		   # other-writeable bit of parent directory when it shouldn't.
+		   # other-writable bit of parent directory when it shouldn't.
 		   # FreeBSD 6.1 mkdir -m -p sets mode of existing directory.
 		   ls_ld_tmpdir=`ls -ld "$tmpdir"`
 		   case $ls_ld_tmpdir in
@@ -363,10 +370,10 @@ fi
 	      then posix_mkdir=:
 	      fi
 	      rmdir "$tmpdir/d" "$tmpdir"
-	else
+	    else
 	      # Remove any dirs left behind by ancient mkdir implementations.
 	      rmdir ./$mkdir_mode ./-p ./-- 2>/dev/null
-	fi
+	    fi
 	    trap '' 0;;
 	esac;;
     esac
@@ -385,7 +392,7 @@ fi
 
       case $dstdir in
 	/*) prefix='/';;
-	-*) prefix='./';;
+	[-=\(\)!]*) prefix='./';;
 	*)  prefix='';;
       esac
 
@@ -403,7 +410,7 @@ fi
 
       for d
       do
-	test -z "$d" && continue
+	test X"$d" = X && continue
 
 	prefix=$prefix$d
 	if test -d "$prefix"; then
@@ -420,7 +427,7 @@ fi
 	      *) qprefix=$prefix;;
 	    esac
 	    prefixes="$prefixes '$qprefix'"
-	fi
+	  fi
 	fi
 	prefix=$prefix/
       done
@@ -454,8 +461,8 @@ fi
 
     # and set any options; do chmod last to preserve setuid bits.
     #
-# If any of these fail, we abort the whole thing.  If we want to
-# ignore errors from any of these, just make sure not to ignore
+    # If any of these fail, we abort the whole thing.  If we want to
+    # ignore errors from any of these, just make sure not to ignore
     # errors from the above "$doit $cpprog $src $dsttmp" command.
     #
     { test -z "$chowncmd" || $doit $chowncmd "$dsttmp"; } &&

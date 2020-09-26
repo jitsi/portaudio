@@ -143,7 +143,7 @@ int main( int argc, const char* argv[] )
             usage();
         }
     }
-
+    
     inputParameters.channelCount = NUM_CHANNELS;
     inputParameters.sampleFormat = paFloat32; /* 32 bit floating point output */
     inputParameters.hostApiSpecificStreamInfo = NULL;

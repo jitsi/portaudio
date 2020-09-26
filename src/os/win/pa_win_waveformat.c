@@ -129,7 +129,7 @@ PaWinWaveFormatChannelMask PaWin_DefaultChannelMask( int numChannels )
         /* case 7: */
 		case 8:
             /* RoBi: PAWIN_SPEAKER_7POINT1_SURROUND fits normal surround sound setups better than PAWIN_SPEAKER_7POINT1, f.i. NVidia HDMI Audio
-               output is silent on channels 5&6 with NVidia drivers, and channel 7&8 with Micrsoft HD Audio driver using PAWIN_SPEAKER_7POINT1.
+               output is silent on channels 5&6 with NVidia drivers, and channel 7&8 with Micrsoft HD Audio driver using PAWIN_SPEAKER_7POINT1. 
                With PAWIN_SPEAKER_7POINT1_SURROUND both setups work OK. */
 			return PAWIN_SPEAKER_7POINT1_SURROUND;
 	}

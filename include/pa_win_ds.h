@@ -63,11 +63,11 @@ typedef struct PaWinDirectSoundStreamInfo{
 
     unsigned long flags;            /**< enable other features of this struct */
 
-    /**
+    /** 
        low-level latency setting support
        Sets the size of the DirectSound host buffer.
        When flags contains the paWinDirectSoundUseLowLevelLatencyParameters
-       this size will be used instead of interpreting the generic latency
+       this size will be used instead of interpreting the generic latency 
        parameters to Pa_OpenStream(). If the flag is not set this value is ignored.
 
        If the stream is a full duplex stream the implementation requires that
