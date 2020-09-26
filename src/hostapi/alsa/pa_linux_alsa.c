@@ -1247,7 +1247,7 @@ static PaError FillInDevInfo( PaAlsaHostApiRepresentation *alsaApi, HwDevInfo* d
             alsaApi->allocations, sizeof(PaAlsaDeviceInfo) ), paInsufficientMemory );
         memcpy( out->deviceInfos[*devIdx], devInfo, sizeof(PaAlsaDeviceInfo) );
         PA_ENSURE( PaAlsa_StrDup( alsaApi, (char **)&out->deviceInfos[*devIdx]->name, baseDeviceInfo->name ) );
-        PA_ENSURE( PaAlsa_StrDup( alsaApi, &((PaAlsaDeviceInfo*)out->deviceInfos[*devIdx])->alsaName, deviceName->alsaName ) );
+        PA_ENSURE( PaAlsa_StrDup( alsaApi, &((PaAlsaDeviceInfo*)out->deviceInfos[*devIdx])->alsaName, deviceHwInfo->alsaName ) );
         (*devIdx) += 1;
     }
     else
@@ -1309,7 +1309,7 @@ static PaError BuildDeviceList( PaAlsaHostApiRepresentation *alsaApi, void** sca
         char *cardName;
         int devIdx = -1;
         snd_ctl_t *ctl;
-        char buf[50];
+        char buf[67];
 
         snprintf( alsaCardName, sizeof (alsaCardName), "hw:%d", cardIdx );
 
@@ -3694,9 +3694,9 @@ static PaError PaAlsaStreamComponent_GetAvailableFrames( PaAlsaStreamComponent *
     }
 
     /* Fix frames avail, should not be bigger than bufferSize wd-xxx */
-    if (framesAvail > self->bufferSize) {
+    if (framesAvail > self->alsaBufferSize) {
         // printf("xrun-2, fav %d\n", framesAvail); fflush(stdout);  // DEBUG-WD
-        framesAvail = self->bufferSize;
+        framesAvail = self->alsaBufferSize;
     }
     *numFrames = framesAvail;
 
