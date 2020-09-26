@@ -1,5 +1,5 @@
 /*
- * $Id: pa_win_ds.c 1672 2011-05-04 20:11:30Z rossb $
+ * $Id$
  * Portable Audio I/O Library DirectSound implementation
  *
  * Authors: Phil Burk, Robert Marsanyi & Ross Bencina
@@ -74,6 +74,7 @@
 #include "pa_win_ds_dynlink.h"
 #include "pa_win_waveformat.h"
 #include "pa_win_wdmks_utils.h"
+#include "pa_win_coinitialize.h"
 
 #if (defined(WIN32) && (defined(_MSC_VER) && (_MSC_VER >= 1200))) /* MSC version 6 and above */
 #pragma comment( lib, "dsound.lib" )
@@ -189,7 +190,7 @@ typedef struct
 
     /* implementation specific data goes here */
 
-    char                    comWasInitialized;
+    PaWinUtilComInitializationResult comInitializationResult;
 
 } PaWinDsHostApiRepresentation;
 
@@ -298,7 +299,7 @@ typedef struct DSDeviceNameAndGUIDVector{
 
     int count;
     int free;
-    DSDeviceNameAndGUID *items; /* Allocated using LocalAlloc() */
+    DSDeviceNameAndGUID *items; // Allocated using LocalAlloc()
 } DSDeviceNameAndGUIDVector;
 
 typedef struct DSDeviceNamesAndGUIDs{
@@ -517,10 +518,11 @@ static GUID pawin_IID_IKsPropertySet =
 static void FindDevicePnpInterfaces( DSDeviceNamesAndGUIDs *deviceNamesAndGUIDs )
 {
     IClassFactory *pClassFactory;
+   
     if( paWinDsDSoundEntryPoints.DllGetClassObject(&pawin_CLSID_DirectSoundPrivate, &IID_IClassFactory, (PVOID *) &pClassFactory) == S_OK ){
         IKsPropertySet *pPropertySet;
         if( pClassFactory->lpVtbl->CreateInstance( pClassFactory, NULL, &pawin_IID_IKsPropertySet, (PVOID *) &pPropertySet) == S_OK ){
-
+            
             DSPROPERTY_DIRECTSOUNDDEVICE_ENUMERATE_W_DATA data;
             ULONG bytesReturned;
 
@@ -603,7 +605,7 @@ static PaError AddOutputDeviceInfoFromDirectSound(
     PaError                       result = paNoError;
     int                           i;
 
-   
+
     if( lpGUID )
     {
         if (IsEqualGUID (&IID_IRolandVSCEmulated1,lpGUID) ||
@@ -618,6 +620,23 @@ static PaError AddOutputDeviceInfoFromDirectSound(
         Note that using CoCreateInstance doesn't work on windows CE.
     */
     hr = paWinDsDSoundEntryPoints.DirectSoundCreate( lpGUID, &lpDirectSound, NULL );
+
+    /** try using CoCreateInstance because DirectSoundCreate was hanging under
+        some circumstances - note this was probably related to the
+        #define BOOL short bug which has now been fixed
+        @todo delete this comment and the following code once we've ensured
+        there is no bug.
+    */
+    /*
+    hr = CoCreateInstance( &CLSID_DirectSound, NULL, CLSCTX_INPROC_SERVER,
+            &IID_IDirectSound, (void**)&lpDirectSound );
+
+    if( hr == S_OK )
+    {
+        hr = IDirectSound_Initialize( lpDirectSound, lpGUID );
+    }
+    */
+    
     if( hr != DS_OK )
     {
         if (hr == DSERR_ALLOCATED)
@@ -650,7 +669,7 @@ static PaError AddOutputDeviceInfoFromDirectSound(
         if( hr != DS_OK )
         {
             DBUG(("Cannot GetCaps() for DirectSound device %s. Result = 0x%x\n", name, hr ));
-            
+
             result = paUnanticipatedHostError;
             goto error;
         }
@@ -666,132 +685,134 @@ static PaError AddOutputDeviceInfoFromDirectSound(
             }
 #endif
 
-            deviceInfo->maxInputChannels = 0;
-            winDsDeviceInfo->deviceInputChannelCountIsKnown = 1;
+            {
+                deviceInfo->maxInputChannels = 0;
+                winDsDeviceInfo->deviceInputChannelCountIsKnown = 1;
 
-            /* DS output capabilities only indicate supported number of channels
-               using two flags which indicate mono and/or stereo.
-               We assume that stereo devices may support more than 2 channels
-               (as is the case with 5.1 devices for example) and so
-               set deviceOutputChannelCountIsKnown to 0 (unknown).
-               In this case OpenStream will try to open the device
-               when the user requests more than 2 channels, rather than
-               returning an error. 
-            */
-            if( caps.dwFlags & DSCAPS_PRIMARYSTEREO )
-            {
-                deviceInfo->maxOutputChannels = 2;
-                winDsDeviceInfo->deviceOutputChannelCountIsKnown = 0;
-            }
-            else
-            {
-                deviceInfo->maxOutputChannels = 1;
-                winDsDeviceInfo->deviceOutputChannelCountIsKnown = 1;
-            }
-
-            /* Guess channels count from speaker configuration. We do it only when 
-               pnpInterface is NULL or when PAWIN_USE_WDMKS_DEVICE_INFO is undefined.
-            */
-#ifdef PAWIN_USE_WDMKS_DEVICE_INFO
-            if( !pnpInterface )
-#endif
-            {
-                DWORD spkrcfg;
-                if( SUCCEEDED(IDirectSound_GetSpeakerConfig( lpDirectSound, &spkrcfg )) )
+                /* DS output capabilities only indicate supported number of channels
+                   using two flags which indicate mono and/or stereo.
+                   We assume that stereo devices may support more than 2 channels
+                   (as is the case with 5.1 devices for example) and so
+                   set deviceOutputChannelCountIsKnown to 0 (unknown).
+                   In this case OpenStream will try to open the device
+                   when the user requests more than 2 channels, rather than
+                   returning an error.
+                */
+                if( caps.dwFlags & DSCAPS_PRIMARYSTEREO )
                 {
-                    int count = 0;
-                    switch (DSSPEAKER_CONFIG(spkrcfg))
+                    deviceInfo->maxOutputChannels = 2;
+                    winDsDeviceInfo->deviceOutputChannelCountIsKnown = 0;
+                }
+                else
+                {
+                    deviceInfo->maxOutputChannels = 1;
+                    winDsDeviceInfo->deviceOutputChannelCountIsKnown = 1;
+                }
+
+                /* Guess channels count from speaker configuration. We do it only when
+                   pnpInterface is NULL or when PAWIN_USE_WDMKS_DEVICE_INFO is undefined.
+                */
+#ifdef PAWIN_USE_WDMKS_DEVICE_INFO
+                if( !pnpInterface )
+#endif
+                {
+                    DWORD spkrcfg;
+                    if( SUCCEEDED(IDirectSound_GetSpeakerConfig( lpDirectSound, &spkrcfg )) )
                     {
-                        case DSSPEAKER_HEADPHONE:        count = 2; break;
-                        case DSSPEAKER_MONO:             count = 1; break;
-                        case DSSPEAKER_QUAD:             count = 4; break;
-                        case DSSPEAKER_STEREO:           count = 2; break;
-                        case DSSPEAKER_SURROUND:         count = 4; break;
-                        case DSSPEAKER_5POINT1:          count = 6; break;
-                        case DSSPEAKER_7POINT1:          count = 8; break;
+                        int count = 0;
+                        switch (DSSPEAKER_CONFIG(spkrcfg))
+                        {
+                            case DSSPEAKER_HEADPHONE:        count = 2; break;
+                            case DSSPEAKER_MONO:             count = 1; break;
+                            case DSSPEAKER_QUAD:             count = 4; break;
+                            case DSSPEAKER_STEREO:           count = 2; break;
+                            case DSSPEAKER_SURROUND:         count = 4; break;
+                            case DSSPEAKER_5POINT1:          count = 6; break;
+                            case DSSPEAKER_7POINT1:          count = 8; break;
 #ifndef DSSPEAKER_7POINT1_SURROUND
 #define DSSPEAKER_7POINT1_SURROUND 0x00000008
 #endif                            
-                        case DSSPEAKER_7POINT1_SURROUND: count = 8; break;
+                            case DSSPEAKER_7POINT1_SURROUND: count = 8; break;
 #ifndef DSSPEAKER_5POINT1_SURROUND
 #define DSSPEAKER_5POINT1_SURROUND 0x00000009
 #endif
-                        case DSSPEAKER_5POINT1_SURROUND: count = 6; break;
+                            case DSSPEAKER_5POINT1_SURROUND: count = 6; break;
+                        }
+                        if( count )
+                        {
+                            deviceInfo->maxOutputChannels = count;
+                            winDsDeviceInfo->deviceOutputChannelCountIsKnown = 1;
+                        }
                     }
-                    if( count )
+                }
+
+#ifdef PAWIN_USE_WDMKS_DEVICE_INFO
+                if( pnpInterface )
+                {
+                    int count = PaWin_WDMKS_QueryFilterMaximumChannelCount( pnpInterface, /* isInput= */ 0  );
+                    if( count > 0 )
                     {
                         deviceInfo->maxOutputChannels = count;
                         winDsDeviceInfo->deviceOutputChannelCountIsKnown = 1;
                     }
                 }
-            }
-
-#ifdef PAWIN_USE_WDMKS_DEVICE_INFO
-            if( pnpInterface )
-            {
-                int count = PaWin_WDMKS_QueryFilterMaximumChannelCount( pnpInterface, /* isInput= */ 0  );
-                if( count > 0 )
-                {
-                    deviceInfo->maxOutputChannels = count;
-                    winDsDeviceInfo->deviceOutputChannelCountIsKnown = 1;
-                }
-            }
 #endif /* PAWIN_USE_WDMKS_DEVICE_INFO */
 
-            deviceInfo->defaultLowInputLatency = 0.;    /** @todo IMPLEMENT ME */
-            deviceInfo->defaultLowOutputLatency = 0.;   /** @todo IMPLEMENT ME */
-            deviceInfo->defaultHighInputLatency = 0.;   /** @todo IMPLEMENT ME */
-            deviceInfo->defaultHighOutputLatency = 0.;  /** @todo IMPLEMENT ME */
-            
-            /* initialize defaultSampleRate */
-            
-            if( caps.dwFlags & DSCAPS_CONTINUOUSRATE )
-            {
-                /* initialize to caps.dwMaxSecondarySampleRate incase none of the standard rates match */
-                deviceInfo->defaultSampleRate = caps.dwMaxSecondarySampleRate;
-
-                for( i = 0; i < PA_DEFAULTSAMPLERATESEARCHORDER_COUNT_; ++i )
+                deviceInfo->defaultLowInputLatency = 0.;    /** @todo IMPLEMENT ME */
+                deviceInfo->defaultLowOutputLatency = 0.;   /** @todo IMPLEMENT ME */
+                deviceInfo->defaultHighInputLatency = 0.;   /** @todo IMPLEMENT ME */
+                deviceInfo->defaultHighOutputLatency = 0.;  /** @todo IMPLEMENT ME */
+                
+                /* initialize defaultSampleRate */
+                
+                if( caps.dwFlags & DSCAPS_CONTINUOUSRATE )
                 {
-                    if( defaultSampleRateSearchOrder_[i] >= caps.dwMinSecondarySampleRate
-                            && defaultSampleRateSearchOrder_[i] <= caps.dwMaxSecondarySampleRate )
+                    /* initialize to caps.dwMaxSecondarySampleRate incase none of the standard rates match */
+                    deviceInfo->defaultSampleRate = caps.dwMaxSecondarySampleRate;
+
+                    for( i = 0; i < PA_DEFAULTSAMPLERATESEARCHORDER_COUNT_; ++i )
                     {
-                        deviceInfo->defaultSampleRate = defaultSampleRateSearchOrder_[i];
-                        break;
+                        if( defaultSampleRateSearchOrder_[i] >= caps.dwMinSecondarySampleRate
+                                && defaultSampleRateSearchOrder_[i] <= caps.dwMaxSecondarySampleRate )
+                        {
+                            deviceInfo->defaultSampleRate = defaultSampleRateSearchOrder_[i];
+                            break;
+                        }
                     }
                 }
-            }
-            else if( caps.dwMinSecondarySampleRate == caps.dwMaxSecondarySampleRate )
-            {
-                if( caps.dwMinSecondarySampleRate == 0 )
+                else if( caps.dwMinSecondarySampleRate == caps.dwMaxSecondarySampleRate )
                 {
-                    /*
-                    ** On my Thinkpad 380Z, DirectSoundV6 returns min-max=0 !!
-                    ** But it supports continuous sampling.
-                    ** So fake range of rates, and hope it really supports it.
+                    if( caps.dwMinSecondarySampleRate == 0 )
+                    {
+                        /*
+                        ** On my Thinkpad 380Z, DirectSoundV6 returns min-max=0 !!
+                        ** But it supports continuous sampling.
+                        ** So fake range of rates, and hope it really supports it.
+                        */
+                        deviceInfo->defaultSampleRate = 44100.0f;
+
+                        DBUG(("PA - Reported rates both zero. Setting to fake values for device #%s\n", name ));
+                    }
+                    else
+                    {
+	                    deviceInfo->defaultSampleRate = caps.dwMaxSecondarySampleRate;
+                    }
+                }
+                else if( (caps.dwMinSecondarySampleRate < 1000.0) && (caps.dwMaxSecondarySampleRate > 50000.0) )
+                {
+                    /* The EWS88MT drivers lie, lie, lie. The say they only support two rates, 100 & 100000.
+                    ** But we know that they really support a range of rates!
+                    ** So when we see a ridiculous set of rates, assume it is a range.
                     */
-                    deviceInfo->defaultSampleRate = 44100.0f;
-
-                    DBUG(("PA - Reported rates both zero. Setting to fake values for device #%s\n", name ));
+                  deviceInfo->defaultSampleRate = 44100.0f;
+                  DBUG(("PA - Sample rate range used instead of two odd values for device #%s\n", name ));
                 }
-                else
-                {
-                    deviceInfo->defaultSampleRate = caps.dwMaxSecondarySampleRate;
-                }
-            }
-            else if( (caps.dwMinSecondarySampleRate < 1000.0) && (caps.dwMaxSecondarySampleRate > 50000.0) )
-            {
-                /* The EWS88MT drivers lie, lie, lie. The say they only support two rates, 100 & 100000.
-                ** But we know that they really support a range of rates!
-                ** So when we see a ridiculous set of rates, assume it is a range.
-                */
-              deviceInfo->defaultSampleRate = 44100.0f;
-              DBUG(("PA - Sample rate range used instead of two odd values for device #%s\n", name ));
-            }
-            else deviceInfo->defaultSampleRate = caps.dwMaxSecondarySampleRate;
+                else deviceInfo->defaultSampleRate = caps.dwMaxSecondarySampleRate;
 
 
-            //printf( "min %d max %d\n", caps.dwMinSecondarySampleRate, caps.dwMaxSecondarySampleRate );
-            // dwFlags | DSCAPS_CONTINUOUSRATE 
+                //printf( "min %d max %d\n", caps.dwMinSecondarySampleRate, caps.dwMaxSecondarySampleRate );
+                // dwFlags | DSCAPS_CONTINUOUSRATE 
+            }
         }
 
         IDirectSound_Release( lpDirectSound );
@@ -846,8 +867,19 @@ static PaError AddInputDeviceInfoFromDirectSoundCapture(
     LPDIRECTSOUNDCAPTURE          lpDirectSoundCapture = NULL;
     DSCCAPS                       caps;
     PaError                       result = paNoError;
-    
+
     hr = paWinDsDSoundEntryPoints.DirectSoundCaptureCreate( lpGUID, &lpDirectSoundCapture, NULL );
+
+    /** try using CoCreateInstance because DirectSoundCreate was hanging under
+        some circumstances - note this was probably related to the
+        #define BOOL short bug which has now been fixed
+        @todo delete this comment and the following code once we've ensured
+        there is no bug.
+    */
+    /*
+    hr = CoCreateInstance( &CLSID_DirectSoundCapture, NULL, CLSCTX_INPROC_SERVER,
+            &IID_IDirectSoundCapture, (void**)&lpDirectSoundCapture );
+    */
     if( hr != DS_OK )
     {
         DBUG(("Cannot create Capture for %s. Result = 0x%x\n", name, hr ));
@@ -877,44 +909,45 @@ static PaError AddInputDeviceInfoFromDirectSoundCapture(
             }
 #endif
 
-            deviceInfo->maxInputChannels = caps.dwChannels;
-            winDsDeviceInfo->deviceInputChannelCountIsKnown = 1;
+            {
+                deviceInfo->maxInputChannels = caps.dwChannels;
+                winDsDeviceInfo->deviceInputChannelCountIsKnown = 1;
 
-            deviceInfo->maxOutputChannels = 0;
-            winDsDeviceInfo->deviceOutputChannelCountIsKnown = 1;
+                deviceInfo->maxOutputChannels = 0;
+                winDsDeviceInfo->deviceOutputChannelCountIsKnown = 1;
 
 #ifdef PAWIN_USE_WDMKS_DEVICE_INFO
-            if( pnpInterface )
-            {
-                int count = PaWin_WDMKS_QueryFilterMaximumChannelCount( pnpInterface, /* isInput= */ 1  );
-                if( count > 0 )
+                if( pnpInterface )
                 {
-                    deviceInfo->maxInputChannels = count;
-                    winDsDeviceInfo->deviceInputChannelCountIsKnown = 1;
+                    int count = PaWin_WDMKS_QueryFilterMaximumChannelCount( pnpInterface, /* isInput= */ 1  );
+                    if( count > 0 )
+                    {
+                        deviceInfo->maxInputChannels = count;
+                        winDsDeviceInfo->deviceInputChannelCountIsKnown = 1;
+                    }
                 }
-            }
 #endif /* PAWIN_USE_WDMKS_DEVICE_INFO */
 
-            deviceInfo->defaultLowInputLatency = 0.;    /** @todo IMPLEMENT ME */
-            deviceInfo->defaultLowOutputLatency = 0.;   /** @todo IMPLEMENT ME */
-            deviceInfo->defaultHighInputLatency = 0.;   /** @todo IMPLEMENT ME */
-            deviceInfo->defaultHighOutputLatency = 0.;  /** @todo IMPLEMENT ME */
+                deviceInfo->defaultLowInputLatency = 0.;    /** @todo IMPLEMENT ME */
+                deviceInfo->defaultLowOutputLatency = 0.;   /** @todo IMPLEMENT ME */
+                deviceInfo->defaultHighInputLatency = 0.;   /** @todo IMPLEMENT ME */
+                deviceInfo->defaultHighOutputLatency = 0.;  /** @todo IMPLEMENT ME */
 
 /*  constants from a WINE patch by Francois Gouget, see:
-http://www.winehq.com/hypermail/wine-patches/2003/01/0290.html
+    http://www.winehq.com/hypermail/wine-patches/2003/01/0290.html
 
----
-Date: Fri, 14 May 2004 10:38:12 +0200 (CEST)
-From: Francois Gouget <fgouget@ ... .fr>
-To: Ross Bencina <rbencina@ ... .au>
-Subject: Re: Permission to use wine 48/96 wave patch in BSD licensed library
+    ---
+    Date: Fri, 14 May 2004 10:38:12 +0200 (CEST)
+    From: Francois Gouget <fgouget@ ... .fr>
+    To: Ross Bencina <rbencina@ ... .au>
+    Subject: Re: Permission to use wine 48/96 wave patch in BSD licensed library
 
-[snip]
+    [snip]
 
-I give you permission to use the patch below under the BSD license.
-http://www.winehq.com/hypermail/wine-patches/2003/01/0290.html
+    I give you permission to use the patch below under the BSD license.
+    http://www.winehq.com/hypermail/wine-patches/2003/01/0290.html
 
-[snip]
+    [snip]
 */
 #ifndef WAVE_FORMAT_48M08
 #define WAVE_FORMAT_48M08      0x00001000    /* 48     kHz, Mono,   8-bit  */
@@ -927,44 +960,45 @@ http://www.winehq.com/hypermail/wine-patches/2003/01/0290.html
 #define WAVE_FORMAT_96S16      0x00080000    /* 96     kHz, Stereo, 16-bit */
 #endif
 
-            /* defaultSampleRate */
-            if( caps.dwChannels == 2 )
-            {
-                if( caps.dwFormats & WAVE_FORMAT_4S16 )
-                    deviceInfo->defaultSampleRate = 44100.0;
-                else if( caps.dwFormats & WAVE_FORMAT_48S16 )
-                    deviceInfo->defaultSampleRate = 48000.0;
-                else if( caps.dwFormats & WAVE_FORMAT_2S16 )
-                    deviceInfo->defaultSampleRate = 22050.0;
-                else if( caps.dwFormats & WAVE_FORMAT_1S16 )
-                    deviceInfo->defaultSampleRate = 11025.0;
-                else if( caps.dwFormats & WAVE_FORMAT_96S16 )
-                    deviceInfo->defaultSampleRate = 96000.0;
-                else
-                    deviceInfo->defaultSampleRate = 0.;
+                /* defaultSampleRate */
+                if( caps.dwChannels == 2 )
+                {
+                    if( caps.dwFormats & WAVE_FORMAT_4S16 )
+                        deviceInfo->defaultSampleRate = 44100.0;
+                    else if( caps.dwFormats & WAVE_FORMAT_48S16 )
+                        deviceInfo->defaultSampleRate = 48000.0;
+                    else if( caps.dwFormats & WAVE_FORMAT_2S16 )
+                        deviceInfo->defaultSampleRate = 22050.0;
+                    else if( caps.dwFormats & WAVE_FORMAT_1S16 )
+                        deviceInfo->defaultSampleRate = 11025.0;
+                    else if( caps.dwFormats & WAVE_FORMAT_96S16 )
+                        deviceInfo->defaultSampleRate = 96000.0;
+                    else
+                        deviceInfo->defaultSampleRate = 0.;
+                }
+                else if( caps.dwChannels == 1 )
+                {
+                    if( caps.dwFormats & WAVE_FORMAT_4M16 )
+                        deviceInfo->defaultSampleRate = 44100.0;
+                    else if( caps.dwFormats & WAVE_FORMAT_48M16 )
+                        deviceInfo->defaultSampleRate = 48000.0;
+                    else if( caps.dwFormats & WAVE_FORMAT_2M16 )
+                        deviceInfo->defaultSampleRate = 22050.0;
+                    else if( caps.dwFormats & WAVE_FORMAT_1M16 )
+                        deviceInfo->defaultSampleRate = 11025.0;
+                    else if( caps.dwFormats & WAVE_FORMAT_96M16 )
+                        deviceInfo->defaultSampleRate = 96000.0;
+                    else
+                        deviceInfo->defaultSampleRate = 0.;
+                }
+                else deviceInfo->defaultSampleRate = 0.;
             }
-            else if( caps.dwChannels == 1 )
-            {
-                if( caps.dwFormats & WAVE_FORMAT_4M16 )
-                    deviceInfo->defaultSampleRate = 44100.0;
-                else if( caps.dwFormats & WAVE_FORMAT_48M16 )
-                    deviceInfo->defaultSampleRate = 48000.0;
-                else if( caps.dwFormats & WAVE_FORMAT_2M16 )
-                    deviceInfo->defaultSampleRate = 22050.0;
-                else if( caps.dwFormats & WAVE_FORMAT_1M16 )
-                    deviceInfo->defaultSampleRate = 11025.0;
-                else if( caps.dwFormats & WAVE_FORMAT_96M16 )
-                    deviceInfo->defaultSampleRate = 96000.0;
-                else
-                    deviceInfo->defaultSampleRate = 0.;
-            }
-            else deviceInfo->defaultSampleRate = 0.;
         }
         
         IDirectSoundCapture_Release( lpDirectSoundCapture );
     }
 
- 
+
     /* Copy GUID to the device info structure. Set pointer. */
     if( lpGUID == NULL )
     {
@@ -1005,23 +1039,7 @@ PaError PaWinDs_Initialize( PaUtilHostApiRepresentation **hostApi, PaHostApiInde
     PaError result = paNoError;
     int deviceCount;
     PaWinDsHostApiRepresentation *winDsHostApi;
-    char comWasInitialized = 0;
     void *scanResults = 0;
-
-    /*
-        If COM is already initialized CoInitialize will either return
-        FALSE, or RPC_E_CHANGED_MODE if it was initialised in a different
-        threading mode. In either case we shouldn't consider it an error
-        but we need to be careful to not call CoUninitialize() if 
-        RPC_E_CHANGED_MODE was returned.
-    */
-
-    HRESULT hr = CoInitialize(NULL);
-    if( FAILED(hr) && hr != RPC_E_CHANGED_MODE )
-        return paUnanticipatedHostError;
-
-    if( hr != RPC_E_CHANGED_MODE )
-        comWasInitialized = 1;
 
     PaWinDs_InitializeDSoundEntryPoints();
 
@@ -1032,7 +1050,11 @@ PaError PaWinDs_Initialize( PaUtilHostApiRepresentation **hostApi, PaHostApiInde
         goto error;
     }
 
-    winDsHostApi->comWasInitialized = comWasInitialized;
+    result = PaWinUtil_CoInitialize( paDirectSound, &winDsHostApi->comInitializationResult );
+    if( result != paNoError )
+    {
+        goto error;
+    }
 
     winDsHostApi->allocations = PaUtil_CreateAllocationGroup();
     if( !winDsHostApi->allocations )
@@ -1059,6 +1081,7 @@ PaError PaWinDs_Initialize( PaUtilHostApiRepresentation **hostApi, PaHostApiInde
     /* FIXME for now we ignore the result of CommitDeviceInfos(), it should probably be an atomic non-failing operation */
     CommitDeviceInfos( &winDsHostApi->inheritedHostApiRep, hostApiIndex, scanResults, deviceCount );
 
+    
     (*hostApi)->Terminate = Terminate;
     (*hostApi)->OpenStream = OpenStream;
     (*hostApi)->IsFormatSupported = IsFormatSupported;
@@ -1088,13 +1111,14 @@ error:
             PaUtil_DestroyAllocationGroup( winDsHostApi->allocations );
         }
 
+        PaWinUtil_CoUninitialize( paDirectSound, &winDsHostApi->comInitializationResult );
+
         PaUtil_FreeMemory( winDsHostApi );
     }
 
 
 
-    if( comWasInitialized )
-        CoUninitialize();
+    PaWinDs_TerminateDSoundEntryPoints();
 
     return result;
 }
@@ -1104,7 +1128,6 @@ error:
 static void Terminate( struct PaUtilHostApiRepresentation *hostApi )
 {
     PaWinDsHostApiRepresentation *winDsHostApi = (PaWinDsHostApiRepresentation*)hostApi;
-    char comWasInitialized = winDsHostApi->comWasInitialized;
 
     /*
         IMPLEMENT ME:
@@ -1117,12 +1140,11 @@ static void Terminate( struct PaUtilHostApiRepresentation *hostApi )
         PaUtil_DestroyAllocationGroup( winDsHostApi->allocations );
     }
 
+    PaWinUtil_CoUninitialize( paDirectSound, &winDsHostApi->comInitializationResult );
+
     PaUtil_FreeMemory( winDsHostApi );
 
     PaWinDs_TerminateDSoundEntryPoints();
-
-    if( comWasInitialized )
-        CoUninitialize();
 }
 
 
