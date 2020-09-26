@@ -1,9 +1,10 @@
 /*
  * Portable Audio I/O Library WASAPI implementation
- * Copyright (c) 2006-2010 David Viens, Dmitry Kostjuchenko
+ * Copyright (c) 2006-2010 David Viens
+ * Copyright (c) 2010-2019 Dmitry Kostjuchenko
  *
  * Based on the Open Source API proposed by Ross Bencina
- * Copyright (c) 1999-2002 Ross Bencina, Phil Burk
+ * Copyright (c) 1999-2019 Ross Bencina, Phil Burk
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files
@@ -52,6 +53,13 @@
 #ifndef PA_WASAPI_MAX_CONST_DEVICE_COUNT
 	#define PA_WASAPI_MAX_CONST_DEVICE_COUNT 0 // Force basic behavior by defining 0 if not defined by user
 #endif
+
+// Fallback from Event to the Polling method in case if latency is higher than 21.33ms, as it allows to use
+// 100% of CPU inside the PA's callback.
+// Note: Some USB DAC drivers are buggy when Polling method is forced in Exclusive mode, audio output becomes
+//       unstable with a lot of interruptions, therefore this define is optional. The default behavior is to
+//       not change the Event mode to Polling and use the mode which user provided.
+//#define PA_WASAPI_FORCE_POLL_IF_LARGE_BUFFER
 
 // WinRT
 #if defined(WINAPI_FAMILY) && (WINAPI_FAMILY == WINAPI_FAMILY_APP)
@@ -279,7 +287,7 @@ typedef struct _pa_AudioClientProperties {
 PA_THREAD_FUNC ProcThreadEvent(void *param);
 PA_THREAD_FUNC ProcThreadPoll(void *param);
 
-// Availabe from Windows 7
+// Error codes (availabe since Windows 7)
 #ifndef AUDCLNT_E_BUFFER_ERROR
 	#define AUDCLNT_E_BUFFER_ERROR AUDCLNT_ERR(0x018)
 #endif
@@ -290,7 +298,19 @@ PA_THREAD_FUNC ProcThreadPoll(void *param);
 	#define AUDCLNT_E_INVALID_DEVICE_PERIOD AUDCLNT_ERR(0x020)
 #endif
 
+// Stream flags (availabe since Windows 7)
+#ifndef AUDCLNT_STREAMFLAGS_SRC_DEFAULT_QUALITY
+	#define AUDCLNT_STREAMFLAGS_SRC_DEFAULT_QUALITY 0x08000000
+#endif
+#ifndef AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM
+	#define AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM 0x80000000
+#endif
+
 #define MAX_STR_LEN 512
+
+#ifdef PA_WINRT
+	#define PA_WASAPI_DEVICE_ID_LEN 4096
+#endif
 
 enum { S_INPUT = 0, S_OUTPUT = 1, S_COUNT = 2, S_FULLDUPLEX = 0 };
 
@@ -337,12 +357,6 @@ FAvRtWaitOnThreadOrderingGroup   pAvRtWaitOnThreadOrderingGroup = NULL;
 FAvSetMmThreadCharacteristics    pAvSetMmThreadCharacteristics = NULL;
 FAvRevertMmThreadCharacteristics pAvRevertMmThreadCharacteristics = NULL;
 FAvSetMmThreadPriority           pAvSetMmThreadPriority = NULL;
-#endif
-
-#ifdef PA_WINRT
-#define PA_WASAPI_DEVICE_ID_LEN 4096
-static OLECHAR g_DefaultRenderId[PA_WASAPI_DEVICE_ID_LEN] = { 0 };
-static OLECHAR g_DefaultCaptureId[PA_WASAPI_DEVICE_ID_LEN] = { 0 };
 #endif
 
 #define _GetProc(fun, type, name)  {                                                        \
@@ -427,6 +441,9 @@ typedef struct PaWasapiDeviceInfo
 	// Default format (setup through Control Panel by user)
 	WAVEFORMATEXTENSIBLE DefaultFormat;
 
+	// Mix format (internal format used by WASAPI audio engine)
+	WAVEFORMATEXTENSIBLE MixFormat;
+
     // Fields filled from IMMEndpoint'sGetDataFlow
     EDataFlow flow;
 
@@ -449,15 +466,15 @@ typedef struct
 
     PaWinUtilComInitializationResult comInitializationResult;
 
-    //this is the REAL number of devices, whether they are usefull to PA or not!
+    // this is the REAL number of devices, whether they are usefull to PA or not!
     UINT32 deviceCount;
 
-    WCHAR defaultRenderer [MAX_STR_LEN];
-    WCHAR defaultCapturer [MAX_STR_LEN];
+    WCHAR defaultRenderer[MAX_STR_LEN];
+    WCHAR defaultCapturer[MAX_STR_LEN];
 
     PaWasapiDeviceInfo *devInfo;
 
-	// Is true when WOW64 Vista/7 Workaround is needed
+	// is TRUE when WOW64 Vista/7 Workaround is needed
 	BOOL useWOW64Workaround;
 }
 PaWasapiHostApiRepresentation;
@@ -581,6 +598,10 @@ typedef struct PaWasapiStream
 
 	// Thread priority level
 	PaWasapiThreadPriority nThreadPriority;
+
+	// State handler
+	PaWasapiStreamStateCallback fnStateHandler;
+	void *pStateHandlerUserData;
 }
 PaWasapiStream;
 
@@ -592,7 +613,7 @@ static HRESULT UnmarshalStreamComPointers(PaWasapiStream *stream);
 static void ReleaseUnmarshaledSubComPointers(PaWasapiSubStream *substream);
 static void ReleaseUnmarshaledComPointers(PaWasapiStream *stream);
 
-// Local stream methods
+// Local methods
 static void _StreamOnStop(PaWasapiStream *stream);
 static void _StreamFinish(PaWasapiStream *stream);
 static void _StreamCleanup(PaWasapiStream *stream);
@@ -600,8 +621,13 @@ static HRESULT _PollGetOutputFramesAvailable(PaWasapiStream *stream, UINT32 *ava
 static HRESULT _PollGetInputFramesAvailable(PaWasapiStream *stream, UINT32 *available);
 static void *PaWasapi_ReallocateMemory(void *prev, size_t size);
 static void PaWasapi_FreeMemory(void *ptr);
+static PaSampleFormat WaveToPaFormat(const WAVEFORMATEXTENSIBLE *fmtext);
 
 // Local statics
+#ifdef PA_WINRT
+static OLECHAR g_DefaultRenderId[PA_WASAPI_DEVICE_ID_LEN] = { 0 };
+static OLECHAR g_DefaultCaptureId[PA_WASAPI_DEVICE_ID_LEN] = { 0 };
+#endif
 
 // ------------------------------------------------------------------------------------------
 #define LogHostError(HRES) __LogHostError(HRES, __FUNCTION__, __FILE__, __LINE__)
@@ -847,7 +873,7 @@ static UINT32 ALIGN_FWD(UINT32 v, UINT32 align)
 
 // ------------------------------------------------------------------------------------------
 // Get next value power of 2
-UINT32 ALIGN_NEXT_POW2(UINT32 v)
+static UINT32 ALIGN_NEXT_POW2(UINT32 v)
 {
 	UINT32 v2 = 1;
 	while (v > (v2 <<= 1)) { }
@@ -1055,7 +1081,7 @@ static EWindowsVersion GetWindowsVersion()
 		// by GetVersion API)
 		if ((fnRtlGetVersion = (LPFN_RTLGETVERSION)GetProcAddress(GetModuleHandleA("ntdll"), "RtlGetVersion")) != NULL)
 		{
-			OSVERSIONINFOW ver = { sizeof(OSVERSIONINFOW), 0, 0, 0, {0} };
+			OSVERSIONINFOW ver = { sizeof(OSVERSIONINFOW), 0, 0, 0, 0, {0} };
 
 			PRINT(("WASAPI: getting Windows version with RtlGetVersion()\n"));
 
@@ -1268,27 +1294,88 @@ EMixDirection;
 // ------------------------------------------------------------------------------------------
 static void _MixMonoToStereo_1TO2_8(void *__to, const void *__from, UINT32 count) { _WASAPI_MONO_TO_STEREO_MIXER_1_TO_2(BYTE); }
 static void _MixMonoToStereo_1TO2_16(void *__to, const void *__from, UINT32 count) { _WASAPI_MONO_TO_STEREO_MIXER_1_TO_2(short); }
-static void _MixMonoToStereo_1TO2_24(void *__to, const void *__from, UINT32 count) { _WASAPI_MONO_TO_STEREO_MIXER_1_TO_2(int); /* !!! int24 data is contained in 32-bit containers*/ }
+static void _MixMonoToStereo_1TO2_8_24(void *__to, const void *__from, UINT32 count) { _WASAPI_MONO_TO_STEREO_MIXER_1_TO_2(int); /* !!! int24 data is contained in 32-bit containers*/ }
 static void _MixMonoToStereo_1TO2_32(void *__to, const void *__from, UINT32 count) { _WASAPI_MONO_TO_STEREO_MIXER_1_TO_2(int); }
 static void _MixMonoToStereo_1TO2_32f(void *__to, const void *__from, UINT32 count) { _WASAPI_MONO_TO_STEREO_MIXER_1_TO_2(float); }
+static void _MixMonoToStereo_1TO2_24(void *__to, const void *__from, UINT32 count)
+{
+	const UCHAR * __restrict from = (const UCHAR *)__from;
+	UCHAR * __restrict to = (UCHAR *)__to;
+	const UCHAR * __restrict end = to + (count * (2 * 3));
+
+	while (to != end)
+	{
+		to[0] = to[3] = from[0];
+		to[1] = to[4] = from[1];
+		to[2] = to[5] = from[2];
+
+		from += 3;
+		to += (2 * 3);
+	}
+}
 
 // ------------------------------------------------------------------------------------------
 static void _MixMonoToStereo_2TO1_8(void *__to, const void *__from, UINT32 count) { _WASAPI_MONO_TO_STEREO_MIXER_2_TO_1_INT32(BYTE); }
 static void _MixMonoToStereo_2TO1_16(void *__to, const void *__from, UINT32 count) { _WASAPI_MONO_TO_STEREO_MIXER_2_TO_1_INT32(short); }
-static void _MixMonoToStereo_2TO1_24(void *__to, const void *__from, UINT32 count) { _WASAPI_MONO_TO_STEREO_MIXER_2_TO_1_INT32(int); /* !!! int24 data is contained in 32-bit containers*/ }
+static void _MixMonoToStereo_2TO1_8_24(void *__to, const void *__from, UINT32 count) { _WASAPI_MONO_TO_STEREO_MIXER_2_TO_1_INT32(int); /* !!! int24 data is contained in 32-bit containers*/ }
 static void _MixMonoToStereo_2TO1_32(void *__to, const void *__from, UINT32 count) { _WASAPI_MONO_TO_STEREO_MIXER_2_TO_1_INT64(int); }
 static void _MixMonoToStereo_2TO1_32f(void *__to, const void *__from, UINT32 count) { _WASAPI_MONO_TO_STEREO_MIXER_2_TO_1_FLT32(float); }
+static void _MixMonoToStereo_2TO1_24(void *__to, const void *__from, UINT32 count)
+{
+	const UCHAR * __restrict from = (const UCHAR *)__from;
+	UCHAR * __restrict to = (UCHAR *)__to;
+	const UCHAR * __restrict end = to + (count * 3);
+	PaInt32 tempL, tempR, tempM;
+
+	while (to != end)
+	{
+        tempL = (((PaInt32)from[0]) << 8);
+        tempL = tempL | (((PaInt32)from[1]) << 16);
+        tempL = tempL | (((PaInt32)from[2]) << 24);
+
+        tempR = (((PaInt32)from[3]) << 8);
+        tempR = tempR | (((PaInt32)from[4]) << 16);
+        tempR = tempR | (((PaInt32)from[5]) << 24);
+
+		tempM = (tempL + tempR) >> 1;
+
+		to[0] = (UCHAR)(tempM >> 8);
+		to[1] = (UCHAR)(tempM >> 16);
+		to[2] = (UCHAR)(tempM >> 24);
+
+		from += (2 * 3);
+		to += 3;
+	}
+}
 
 // ------------------------------------------------------------------------------------------
 static void _MixMonoToStereo_2TO1_8_L(void *__to, const void *__from, UINT32 count) { _WASAPI_MONO_TO_STEREO_MIXER_2_TO_1_L(BYTE); }
 static void _MixMonoToStereo_2TO1_16_L(void *__to, const void *__from, UINT32 count) { _WASAPI_MONO_TO_STEREO_MIXER_2_TO_1_L(short); }
-static void _MixMonoToStereo_2TO1_24_L(void *__to, const void *__from, UINT32 count) { _WASAPI_MONO_TO_STEREO_MIXER_2_TO_1_L(int); /* !!! int24 data is contained in 32-bit containers*/ }
+static void _MixMonoToStereo_2TO1_8_24_L(void *__to, const void *__from, UINT32 count) { _WASAPI_MONO_TO_STEREO_MIXER_2_TO_1_L(int); /* !!! int24 data is contained in 32-bit containers*/ }
 static void _MixMonoToStereo_2TO1_32_L(void *__to, const void *__from, UINT32 count) { _WASAPI_MONO_TO_STEREO_MIXER_2_TO_1_L(int); }
 static void _MixMonoToStereo_2TO1_32f_L(void *__to, const void *__from, UINT32 count) { _WASAPI_MONO_TO_STEREO_MIXER_2_TO_1_L(float); }
+static void _MixMonoToStereo_2TO1_24_L(void *__to, const void *__from, UINT32 count)
+{
+	const UCHAR * __restrict from = (const UCHAR *)__from;
+	UCHAR * __restrict to = (UCHAR *)__to;
+	const UCHAR * __restrict end = to + (count * 3);
+
+	while (to != end)
+	{
+		to[0] = from[0];
+		to[1] = from[1];
+		to[2] = from[2];
+
+		from += (2 * 3);
+		to += 3;
+	}
+}
 
 // ------------------------------------------------------------------------------------------
-static MixMonoToStereoF GetMonoToStereoMixer(PaSampleFormat format, EMixDirection dir)
+static MixMonoToStereoF GetMonoToStereoMixer(const WAVEFORMATEXTENSIBLE *fmtext, EMixDirection dir)
 {
+	PaSampleFormat format = WaveToPaFormat(fmtext);
+
 	switch (dir)
 	{
 	case MIX_DIR__1TO2:
@@ -1296,7 +1383,7 @@ static MixMonoToStereoF GetMonoToStereoMixer(PaSampleFormat format, EMixDirectio
 		{
 		case paUInt8:	return _MixMonoToStereo_1TO2_8;
 		case paInt16:	return _MixMonoToStereo_1TO2_16;
-		case paInt24:	return _MixMonoToStereo_1TO2_24;
+		case paInt24:	return (fmtext->Format.wBitsPerSample == 32 ? _MixMonoToStereo_1TO2_8_24 : _MixMonoToStereo_1TO2_24);
 		case paInt32:	return _MixMonoToStereo_1TO2_32;
 		case paFloat32: return _MixMonoToStereo_1TO2_32f;
 		}
@@ -1307,7 +1394,7 @@ static MixMonoToStereoF GetMonoToStereoMixer(PaSampleFormat format, EMixDirectio
 		{
 		case paUInt8:	return _MixMonoToStereo_2TO1_8;
 		case paInt16:	return _MixMonoToStereo_2TO1_16;
-		case paInt24:	return _MixMonoToStereo_2TO1_24;
+		case paInt24:	return (fmtext->Format.wBitsPerSample == 32 ? _MixMonoToStereo_2TO1_8_24 : _MixMonoToStereo_2TO1_24);
 		case paInt32:	return _MixMonoToStereo_2TO1_32;
 		case paFloat32: return _MixMonoToStereo_2TO1_32f;
 		}
@@ -1318,7 +1405,7 @@ static MixMonoToStereoF GetMonoToStereoMixer(PaSampleFormat format, EMixDirectio
 		{
 		case paUInt8:	return _MixMonoToStereo_2TO1_8_L;
 		case paInt16:	return _MixMonoToStereo_2TO1_16_L;
-		case paInt24:	return _MixMonoToStereo_2TO1_24_L;
+		case paInt24:	return (fmtext->Format.wBitsPerSample == 32 ? _MixMonoToStereo_2TO1_8_24_L : _MixMonoToStereo_2TO1_24_L);
 		case paInt32:	return _MixMonoToStereo_2TO1_32_L;
 		case paFloat32: return _MixMonoToStereo_2TO1_32f_L;
 		}
@@ -1497,13 +1584,54 @@ error:
 #endif
 
 // ------------------------------------------------------------------------------------------
-static HRESULT ActivateAudioInterface(const PaWasapiDeviceInfo *deviceInfo, IAudioClient **client)
+static HRESULT ActivateAudioInterface(const PaWasapiDeviceInfo *deviceInfo, const PaWasapiStreamInfo *streamInfo,
+	IAudioClient **client)
 {
+	HRESULT hr;
+
 #ifndef PA_WINRT
-	return IMMDevice_Activate(deviceInfo->device, GetAudioClientIID(), CLSCTX_ALL, NULL, (void **)client);
+	if (FAILED(hr = IMMDevice_Activate(deviceInfo->device, GetAudioClientIID(), CLSCTX_ALL, NULL, (void **)client)))
+		return hr;
 #else
-	return ActivateAudioInterface_WINRT(deviceInfo->flow, GetAudioClientIID(), (void **)client);
+	if (FAILED(hr = ActivateAudioInterface_WINRT(deviceInfo->flow, GetAudioClientIID(), (void **)client)))
+		return hr;
 #endif
+
+	// Set audio client options (applicable only to IAudioClient2+): options may affect the audio format
+	// support by IAudioClient implementation and therefore we should set them before GetClosestFormat()
+	// in order to correctly match the requested format
+#ifdef __IAudioClient2_INTERFACE_DEFINED__
+	if ((streamInfo != NULL) && (GetAudioClientVersion() >= 2))
+	{
+		pa_AudioClientProperties audioProps = { 0 };
+		audioProps.cbSize     = sizeof(pa_AudioClientProperties);
+		audioProps.bIsOffload = FALSE;
+		audioProps.eCategory  = (AUDIO_STREAM_CATEGORY)streamInfo->streamCategory;
+		switch (streamInfo->streamOption)
+		{
+		case eStreamOptionRaw:
+			if (GetWindowsVersion() >= WINDOWS_8_1_SERVER2012R2)
+				audioProps.Options = pa_AUDCLNT_STREAMOPTIONS_RAW;
+			break;
+		case eStreamOptionMatchFormat:
+			if (GetWindowsVersion() >= WINDOWS_10_SERVER2016)
+				audioProps.Options = pa_AUDCLNT_STREAMOPTIONS_MATCH_FORMAT;
+			break;
+		}
+
+		if (FAILED(hr = IAudioClient2_SetClientProperties((IAudioClient2 *)(*client), (AudioClientProperties *)&audioProps)))
+		{
+			PRINT(("WASAPI: IAudioClient2_SetClientProperties(IsOffload = %d, Category = %d, Options = %d) failed\n", audioProps.bIsOffload, audioProps.eCategory, audioProps.Options));
+			LogHostError(hr);
+		}
+		else
+		{
+			PRINT(("WASAPI: IAudioClient2 set properties: IsOffload = %d, Category = %d, Options = %d\n", audioProps.bIsOffload, audioProps.eCategory, audioProps.Options));
+		}
+	}
+#endif
+
+	return S_OK;
 }
 
 // ------------------------------------------------------------------------------------------
@@ -1519,6 +1647,18 @@ static DWORD SignalObjectAndWait(HANDLE hObjectToSignal, HANDLE hObjectToWaitOn,
 #endif
 
 // ------------------------------------------------------------------------------------------
+static void NotifyStateChanged(PaWasapiStream *stream, UINT32 flags, HRESULT hr)
+{
+	if (stream->fnStateHandler == NULL)
+		return;
+
+	if (FAILED(hr))
+		flags |= paWasapiStreamStateError;
+
+	stream->fnStateHandler((PaStream *)stream, flags, hr, stream->pStateHandlerUserData);
+}
+
+// ------------------------------------------------------------------------------------------
 static PaError CreateDeviceList(PaWasapiHostApiRepresentation *paWasapi, PaHostApiIndex hostApiIndex)
 {
 	PaUtilHostApiRepresentation *hostApi = (PaUtilHostApiRepresentation *)paWasapi;
@@ -1529,8 +1669,6 @@ static PaError CreateDeviceList(PaWasapiHostApiRepresentation *paWasapi, PaHostA
 #ifndef PA_WINRT
     IMMDeviceCollection* pEndPoints = NULL;
 	IMMDeviceEnumerator *pEnumerator = NULL;
-#else
-	WAVEFORMATEX *mixFormat;
 #endif
 	IAudioClient *tmpClient;
 
@@ -1609,19 +1747,20 @@ static PaError CreateDeviceList(PaWasapiHostApiRepresentation *paWasapi, PaHostA
 
 #else
 	// Determine number of available devices by activating AudioClient for render and capture data flows
-	if (!FAILED(ActivateAudioInterface_WINRT(eRender, GetAudioClientIID(), &tmpClient)))
+	if (SUCCEEDED(ActivateAudioInterface_WINRT(eRender, GetAudioClientIID(), &tmpClient)))
 	{
 		paWasapi->deviceCount++;
 		SAFE_RELEASE(tmpClient);
 	}
-	if (!FAILED(ActivateAudioInterface_WINRT(eCapture, GetAudioClientIID(), &tmpClient)))
+	if (SUCCEEDED(ActivateAudioInterface_WINRT(eCapture, GetAudioClientIID(), &tmpClient)))
 	{
 		paWasapi->deviceCount++;
 		SAFE_RELEASE(tmpClient);
 	}
 #endif
 
-    paWasapi->devInfo = (PaWasapiDeviceInfo *)PaUtil_AllocateMemory(sizeof(PaWasapiDeviceInfo) * paWasapi->deviceCount);
+    paWasapi->devInfo = (PaWasapiDeviceInfo *)PaUtil_GroupAllocateMemory(
+		paWasapi->allocations, sizeof(PaWasapiDeviceInfo) * paWasapi->deviceCount);
     if (paWasapi->devInfo == NULL)
 	{
         result = paInsufficientMemory;
@@ -1788,7 +1927,7 @@ static PaError CreateDeviceList(PaWasapiHostApiRepresentation *paWasapi, PaHostA
 			#endif
 
 				// Create temp Audio Client instance to query additional details
-                hr = ActivateAudioInterface(&paWasapi->devInfo[i], &tmpClient);
+                hr = ActivateAudioInterface(&paWasapi->devInfo[i], NULL, &tmpClient);
 				// We need to set the result to a value otherwise we will return paNoError
 				// [IF_FAILED_JUMP(hResult, error);]
 				IF_FAILED_INTERNAL_ERROR_JUMP(hr, result, error);
@@ -1809,9 +1948,20 @@ static PaError CreateDeviceList(PaWasapiHostApiRepresentation *paWasapi, PaHostA
 					hr = S_OK;
 				}
 				
+				// Get mix format
+				{
+					WAVEFORMATEX *mixFormat;
+
+					hr = IAudioClient_GetMixFormat(tmpClient, &mixFormat);
+					if (SUCCEEDED(hr))
+					{
+						memcpy(&paWasapi->devInfo[i].MixFormat, mixFormat, min(sizeof(paWasapi->devInfo[i].MixFormat), (sizeof(*mixFormat) + mixFormat->cbSize)));
+						CoTaskMemFree(mixFormat);
+					}
+				}
+
+				// Register WINRT device
 			#ifdef PA_WINRT
-				// Get mix format which will treat as default device format
-				hr = IAudioClient_GetMixFormat(tmpClient, &mixFormat);
 				if (SUCCEEDED(hr))
 				{
 					// Default device
@@ -1823,9 +1973,8 @@ static PaError CreateDeviceList(PaWasapiHostApiRepresentation *paWasapi, PaHostA
 					// State
 					paWasapi->devInfo[i].state = DEVICE_STATE_ACTIVE;
 
-					// Default format
-					memcpy(&paWasapi->devInfo[i].DefaultFormat, mixFormat, min(sizeof(paWasapi->devInfo[i].DefaultFormat), (sizeof(*mixFormat) + mixFormat->cbSize)));
-					CoTaskMemFree(mixFormat);
+					// Default format is always a mix format
+					paWasapi->devInfo[i].DefaultFormat = paWasapi->devInfo[i].MixFormat;
 
 					// Form-factor
 					paWasapi->devInfo[i].formFactor = UnknownFormFactor;
@@ -1860,18 +2009,18 @@ static PaError CreateDeviceList(PaWasapiHostApiRepresentation *paWasapi, PaHostA
             // we can now fill in portaudio device data
             deviceInfo->maxInputChannels  = 0;
             deviceInfo->maxOutputChannels = 0;
-			deviceInfo->defaultSampleRate = paWasapi->devInfo[i].DefaultFormat.Format.nSamplesPerSec;
+			deviceInfo->defaultSampleRate = paWasapi->devInfo[i].MixFormat.Format.nSamplesPerSec;
             switch (paWasapi->devInfo[i].flow)
 			{
 			case eRender: {
-                deviceInfo->maxOutputChannels		 = paWasapi->devInfo[i].DefaultFormat.Format.nChannels;
+                deviceInfo->maxOutputChannels		 = paWasapi->devInfo[i].MixFormat.Format.nChannels;
                 deviceInfo->defaultHighOutputLatency = nano100ToSeconds(paWasapi->devInfo[i].DefaultDevicePeriod);
                 deviceInfo->defaultLowOutputLatency  = nano100ToSeconds(paWasapi->devInfo[i].MinimumDevicePeriod);
 				PA_DEBUG(("WASAPI:%d| def.SR[%d] max.CH[%d] latency{hi[%f] lo[%f]}\n", i, (UINT32)deviceInfo->defaultSampleRate,
 					deviceInfo->maxOutputChannels, (float)deviceInfo->defaultHighOutputLatency, (float)deviceInfo->defaultLowOutputLatency));
 				break;}
 			case eCapture: {
-                deviceInfo->maxInputChannels		= paWasapi->devInfo[i].DefaultFormat.Format.nChannels;
+                deviceInfo->maxInputChannels		= paWasapi->devInfo[i].MixFormat.Format.nChannels;
                 deviceInfo->defaultHighInputLatency = nano100ToSeconds(paWasapi->devInfo[i].DefaultDevicePeriod);
                 deviceInfo->defaultLowInputLatency  = nano100ToSeconds(paWasapi->devInfo[i].MinimumDevicePeriod);
 				PA_DEBUG(("WASAPI:%d| def.SR[%d] max.CH[%d] latency{hi[%f] lo[%f]}\n", i, (UINT32)deviceInfo->defaultSampleRate,
@@ -1940,13 +2089,13 @@ error:
 // ------------------------------------------------------------------------------------------
 PaError PaWasapi_Initialize( PaUtilHostApiRepresentation **hostApi, PaHostApiIndex hostApiIndex )
 {
-    PaError result = paInternalError;
+    PaError result;
     PaWasapiHostApiRepresentation *paWasapi;
 
 #ifndef PA_WINRT
     if (!SetupAVRT())
 	{
-        PRINT(("WASAPI: No AVRT! (not VISTA?)"));
+        PRINT(("WASAPI: No AVRT! (not VISTA?)\n"));
         return paNoError;
     }
 #endif
@@ -1959,10 +2108,12 @@ PaError PaWasapi_Initialize( PaUtilHostApiRepresentation **hostApi, PaHostApiInd
     }
     memset(paWasapi, 0, sizeof(PaWasapiHostApiRepresentation)); /* ensure all fields are zeroed. especially paWasapi->allocations */
 
+	// Initialize COM subsystem
     result = PaWinUtil_CoInitialize(paWASAPI, &paWasapi->comInitializationResult);
     if (result != paNoError)
         goto error;
 
+	// Create memory group
     paWasapi->allocations = PaUtil_CreateAllocationGroup();
     if (paWasapi->allocations == NULL)
 	{
@@ -2021,15 +2172,20 @@ static void ReleaseWasapiDeviceInfoList( PaWasapiHostApiRepresentation *paWasapi
 {
 	UINT32 i;
 
-	// Release device info bound objects and device info itself
+	// Release device info bound objects
     for (i = 0; i < paWasapi->deviceCount; ++i)
 	{
 	#ifndef PA_WINRT
         SAFE_RELEASE(paWasapi->devInfo[i].device);
 	#endif
     }
-    PaUtil_FreeMemory(paWasapi->devInfo);
 
+	// Free device info
+	if (paWasapi->allocations != NULL)
+		PaUtil_GroupFreeMemory(paWasapi->allocations, paWasapi->devInfo);
+
+	// Be ready for a device list reinitialization and if its creation is failed pointers must not be dangling
+	paWasapi->devInfo = NULL;
 	paWasapi->deviceCount = 0;
 }
 
@@ -2040,16 +2196,20 @@ static void Terminate( PaUtilHostApiRepresentation *hostApi )
 	if (paWasapi == NULL)
 		return;
 
+	// Release device list
 	ReleaseWasapiDeviceInfoList(paWasapi);
 
+	// Free allocations and memory group itself
     if (paWasapi->allocations != NULL)
 	{
         PaUtil_FreeAllAllocations(paWasapi->allocations);
         PaUtil_DestroyAllocationGroup(paWasapi->allocations);
     }
 
-    PaWinUtil_CoUninitialize( paWASAPI, &paWasapi->comInitializationResult );
+	// Release COM subsystem
+    PaWinUtil_CoUninitialize(paWASAPI, &paWasapi->comInitializationResult);
 
+	// Free API representation
     PaUtil_FreeMemory(paWasapi);
 
 	// Close AVRT
@@ -2057,18 +2217,19 @@ static void Terminate( PaUtilHostApiRepresentation *hostApi )
 }
 
 // ------------------------------------------------------------------------------------------
-static PaWasapiHostApiRepresentation *_GetHostApi(PaError *_error)
+static PaWasapiHostApiRepresentation *_GetHostApi(PaError *ret)
 {
 	PaError error;
-
 	PaUtilHostApiRepresentation *pApi;
+
 	if ((error = PaUtil_GetHostApiRepresentation(&pApi, paWASAPI)) != paNoError)
 	{
-		if (_error != NULL)
-			(*_error) = error;
+		if (ret != NULL)
+			(*ret) = error;
 
 		return NULL;
 	}
+
 	return (PaWasapiHostApiRepresentation *)pApi;
 }
 
@@ -2083,7 +2244,11 @@ static PaError UpdateDeviceList()
 	// Get API
 	hostApi = (PaUtilHostApiRepresentation *)(paWasapi = _GetHostApi(&ret));
 	if (paWasapi == NULL)
-		return ret;
+		return paNotInitialized;
+
+	// Make sure initialized properly
+	if (paWasapi->allocations == NULL)
+		return paNotInitialized;
 
 	// Release WASAPI internal device info list
 	ReleaseWasapiDeviceInfoList(paWasapi);
@@ -2098,6 +2263,8 @@ static PaError UpdateDeviceList()
 		PaUtil_GroupFreeMemory(paWasapi->allocations, hostApi->deviceInfos[0]);
 		PaUtil_GroupFreeMemory(paWasapi->allocations, hostApi->deviceInfos);
 
+		// Be ready for a device list reinitialization and if its creation is failed pointers must not be dangling
+		hostApi->deviceInfos = NULL;
 		hostApi->info.deviceCount = 0;
 		hostApi->info.defaultInputDevice = paNoDevice;
 		hostApi->info.defaultOutputDevice = paNoDevice;
@@ -2119,7 +2286,7 @@ PaError PaWasapi_UpdateDeviceList()
 #endif
 
 // ------------------------------------------------------------------------------------------
-int PaWasapi_GetDeviceCurrentFormat( PaStream *pStream, void *pFormat, unsigned int nFormatSize, int bOutput )
+int PaWasapi_GetDeviceCurrentFormat( PaStream *pStream, void *pFormat, unsigned int formatSize, int bOutput )
 {
 	UINT32 size;
 	WAVEFORMATEXTENSIBLE *format;
@@ -2130,14 +2297,14 @@ int PaWasapi_GetDeviceCurrentFormat( PaStream *pStream, void *pFormat, unsigned 
 
 	format = (bOutput == TRUE ? &stream->out.wavex : &stream->in.wavex);
 
-	size = min(nFormatSize, (UINT32)sizeof(*format));
+	size = min(formatSize, (UINT32)sizeof(*format));
 	memcpy(pFormat, format, size);
 
 	return size;
 }
 
 // ------------------------------------------------------------------------------------------
-int PaWasapi_GetDeviceDefaultFormat( void *pFormat, unsigned int nFormatSize, PaDeviceIndex nDevice )
+int PaWasapi_GetDeviceDefaultFormat( void *pFormat, unsigned int formatSize, PaDeviceIndex device )
 {
 	PaError ret;
 	PaWasapiHostApiRepresentation *paWasapi;
@@ -2146,7 +2313,7 @@ int PaWasapi_GetDeviceDefaultFormat( void *pFormat, unsigned int nFormatSize, Pa
 
 	if (pFormat == NULL)
 		return paBadBufferPtr;
-	if (nFormatSize <= 0)
+	if (formatSize <= 0)
 		return paBufferTooSmall;
 
 	// Get API
@@ -2155,7 +2322,7 @@ int PaWasapi_GetDeviceDefaultFormat( void *pFormat, unsigned int nFormatSize, Pa
 		return ret;
 
 	// Get device index
-	ret = PaUtil_DeviceIndexToHostApiDeviceIndex(&index, nDevice, &paWasapi->inheritedHostApiRep);
+	ret = PaUtil_DeviceIndexToHostApiDeviceIndex(&index, device, &paWasapi->inheritedHostApiRep);
     if (ret != paNoError)
         return ret;
 
@@ -2163,14 +2330,47 @@ int PaWasapi_GetDeviceDefaultFormat( void *pFormat, unsigned int nFormatSize, Pa
 	if ((UINT32)index >= paWasapi->deviceCount)
 		return paInvalidDevice;
 
-	size = min(nFormatSize, (UINT32)sizeof(paWasapi->devInfo[ index ].DefaultFormat));
+	size = min(formatSize, (UINT32)sizeof(paWasapi->devInfo[ index ].DefaultFormat));
 	memcpy(pFormat, &paWasapi->devInfo[ index ].DefaultFormat, size);
 
 	return size;
 }
 
 // ------------------------------------------------------------------------------------------
-int PaWasapi_GetDeviceRole( PaDeviceIndex nDevice )
+int PaWasapi_GetDeviceMixFormat( void *pFormat, unsigned int formatSize, PaDeviceIndex device )
+{
+	PaError ret;
+	PaWasapiHostApiRepresentation *paWasapi;
+	UINT32 size;
+	PaDeviceIndex index;
+
+	if (pFormat == NULL)
+		return paBadBufferPtr;
+	if (formatSize <= 0)
+		return paBufferTooSmall;
+
+	// Get API
+	paWasapi = _GetHostApi(&ret);
+	if (paWasapi == NULL)
+		return ret;
+
+	// Get device index
+	ret = PaUtil_DeviceIndexToHostApiDeviceIndex(&index, device, &paWasapi->inheritedHostApiRep);
+    if (ret != paNoError)
+        return ret;
+
+	// Validate index
+	if ((UINT32)index >= paWasapi->deviceCount)
+		return paInvalidDevice;
+
+	size = min(formatSize, (UINT32)sizeof(paWasapi->devInfo[ index ].MixFormat));
+	memcpy(pFormat, &paWasapi->devInfo[ index ].MixFormat, size);
+
+	return size;
+}
+
+// ------------------------------------------------------------------------------------------
+int PaWasapi_GetDeviceRole( PaDeviceIndex device )
 {
 	PaError ret;
 	PaDeviceIndex index;
@@ -2181,7 +2381,7 @@ int PaWasapi_GetDeviceRole( PaDeviceIndex nDevice )
 		return paNotInitialized;
 
 	// Get device index
-	ret = PaUtil_DeviceIndexToHostApiDeviceIndex(&index, nDevice, &paWasapi->inheritedHostApiRep);
+	ret = PaUtil_DeviceIndexToHostApiDeviceIndex(&index, device, &paWasapi->inheritedHostApiRep);
     if (ret != paNoError)
         return ret;
 
@@ -2193,17 +2393,17 @@ int PaWasapi_GetDeviceRole( PaDeviceIndex nDevice )
 }
 
 // ------------------------------------------------------------------------------------------
-PaError PaWasapi_GetFramesPerHostBuffer( PaStream *pStream, unsigned int *nInput, unsigned int *nOutput )
+PaError PaWasapi_GetFramesPerHostBuffer( PaStream *pStream, unsigned int *pInput, unsigned int *pOutput )
 {
     PaWasapiStream *stream = (PaWasapiStream *)pStream;
 	if (stream == NULL)
 		return paBadStreamPtr;
 
-	if (nInput != NULL)
-		(*nInput) = stream->in.framesPerHostCallback;
+	if (pInput != NULL)
+		(*pInput) = stream->in.framesPerHostCallback;
 
-	if (nOutput != NULL)
-		(*nOutput) = stream->out.framesPerHostCallback;
+	if (pOutput != NULL)
+		(*pOutput) = stream->out.framesPerHostCallback;
 
 	return paNoError;
 }
@@ -2262,27 +2462,27 @@ static void LogWAVEFORMATEXTENSIBLE(const WAVEFORMATEXTENSIBLE *in)
 }
 
 // ------------------------------------------------------------------------------------------
-static PaSampleFormat WaveToPaFormat(const WAVEFORMATEXTENSIBLE *in)
+PaSampleFormat WaveToPaFormat(const WAVEFORMATEXTENSIBLE *fmtext)
 {
-    const WAVEFORMATEX *old = (WAVEFORMATEX *)in;
+    const WAVEFORMATEX *fmt = (WAVEFORMATEX *)fmtext;
 
-    switch (old->wFormatTag)
+    switch (fmt->wFormatTag)
 	{
     case WAVE_FORMAT_EXTENSIBLE: {
-        if (IsEqualGUID(&in->SubFormat, &pa_KSDATAFORMAT_SUBTYPE_IEEE_FLOAT))
+        if (IsEqualGUID(&fmtext->SubFormat, &pa_KSDATAFORMAT_SUBTYPE_IEEE_FLOAT))
 		{
-            if (in->Samples.wValidBitsPerSample == 32)
+            if (fmtext->Samples.wValidBitsPerSample == 32)
                 return paFloat32;
         }
         else
-		if (IsEqualGUID(&in->SubFormat, &pa_KSDATAFORMAT_SUBTYPE_PCM))
+		if (IsEqualGUID(&fmtext->SubFormat, &pa_KSDATAFORMAT_SUBTYPE_PCM))
 		{
-            switch (old->wBitsPerSample)
+            switch (fmt->wBitsPerSample)
 			{
-                case 32: return paInt32;
-                case 24: return paInt24;
-                case  8: return paUInt8;
-                case 16: return paInt16;
+			case 32: return paInt32;
+            case 24: return paInt24;
+            case 16: return paInt16;
+			case  8: return paUInt8;
             }
         }
 		break; }
@@ -2291,12 +2491,12 @@ static PaSampleFormat WaveToPaFormat(const WAVEFORMATEXTENSIBLE *in)
 		return paFloat32;
 
     case WAVE_FORMAT_PCM: {
-        switch (old->wBitsPerSample)
+        switch (fmt->wBitsPerSample)
 		{
-            case 32: return paInt32;
-            case 24: return paInt24;
-            case  8: return paUInt8;
-            case 16: return paInt16;
+        case 32: return paInt32;
+        case 24: return paInt24;
+        case 16: return paInt16;
+        case  8: return paUInt8;
         }
 		break; }
     }
@@ -2483,6 +2683,13 @@ static PaError GetClosestFormat(IAudioClient *client, double sampleRate, const P
 
 	// Try standard approach, e.g. if data is > 16 bits it will be packed into 32-bit containers
     MakeWaveFormatFromParams(outWavex, &params, sampleRate, FALSE);
+
+	// If built-in PCM converter requested then shared mode format will always succeed
+	if ((GetWindowsVersion() >= WINDOWS_7_SERVER2008R2) &&
+		(shareMode == AUDCLNT_SHAREMODE_SHARED) &&
+		((streamInfo != NULL) && (streamInfo->flags & paWinWasapiAutoConvert)))
+		return paFormatIsSupported;
+
 	hr = IAudioClient_IsFormatSupported(client, shareMode, &outWavex->Format, (shareMode == AUDCLNT_SHAREMODE_SHARED ? &sharedClosestMatch : NULL));
 
 	// Exclusive mode can require packed format for some devices
@@ -2658,9 +2865,9 @@ static PaError IsFormatSupported( struct PaUtilHostApiRepresentation *hostApi,
 		inputStreamInfo = (PaWasapiStreamInfo *)inputParameters->hostApiSpecificStreamInfo;
 
 		if (inputStreamInfo && (inputStreamInfo->flags & paWinWasapiExclusive))
-			shareMode  = AUDCLNT_SHAREMODE_EXCLUSIVE;
+			shareMode = AUDCLNT_SHAREMODE_EXCLUSIVE;
 
-		hr = ActivateAudioInterface(&paWasapi->devInfo[inputParameters->device], &tmpClient);
+		hr = ActivateAudioInterface(&paWasapi->devInfo[inputParameters->device], inputStreamInfo, &tmpClient);
 		if (hr != S_OK)
 		{
 			LogHostError(hr);
@@ -2683,9 +2890,9 @@ static PaError IsFormatSupported( struct PaUtilHostApiRepresentation *hostApi,
         outputStreamInfo = (PaWasapiStreamInfo *)outputParameters->hostApiSpecificStreamInfo;
 
 		if (outputStreamInfo && (outputStreamInfo->flags & paWinWasapiExclusive))
-			shareMode  = AUDCLNT_SHAREMODE_EXCLUSIVE;
+			shareMode = AUDCLNT_SHAREMODE_EXCLUSIVE;
 
-		hr = ActivateAudioInterface(&paWasapi->devInfo[outputParameters->device], &tmpClient);
+		hr = ActivateAudioInterface(&paWasapi->devInfo[outputParameters->device], outputStreamInfo, &tmpClient);
 		if (hr != S_OK)
 		{
 			LogHostError(hr);
@@ -2736,8 +2943,7 @@ static void _RecalculateBuffersCount(PaWasapiSubStream *sub, UINT32 userFramesPe
 }
 
 // ------------------------------------------------------------------------------------------
-static void _CalculateAlignedPeriod(PaWasapiSubStream *pSub, UINT32 *nFramesPerLatency,
-									ALIGN_FUNC pAlignFunc)
+static void _CalculateAlignedPeriod(PaWasapiSubStream *pSub, UINT32 *nFramesPerLatency, ALIGN_FUNC pAlignFunc)
 {
 	// Align frames to HD Audio packet size of 128 bytes for Exclusive mode only.
 	// Not aligning on Windows Vista will cause Event timeout, although Windows 7 will
@@ -2754,20 +2960,65 @@ static void _CalculateAlignedPeriod(PaWasapiSubStream *pSub, UINT32 *nFramesPerL
 }
 
 // ------------------------------------------------------------------------------------------
+static void _CalculatePeriodicity(PaWasapiSubStream *pSub, BOOL output, REFERENCE_TIME *periodicity)
+{
+	// Note: according Microsoft docs for IAudioClient::Initialize we can set periodicity of the buffer
+	// only for Exclusive mode. By setting periodicity almost equal to the user buffer frames we can
+	// achieve high quality (less glitchy) low-latency audio.
+	if (pSub->shareMode == AUDCLNT_SHAREMODE_EXCLUSIVE)
+	{
+		const PaWasapiDeviceInfo *pInfo = pSub->params.device_info;
+
+		// By default periodicity equals to the full buffer (legacy PA WASAPI's behavior)
+		(*periodicity) = pSub->period;
+
+		// Try make buffer ready for I/O once we request the buffer readiness for it. Only Polling mode
+		// because for Event mode buffer size and periodicity must be equal according Microsoft
+		// documentation for IAudioClient::Initialize.
+		//
+		// TO-DO: try spread to capture and full-duplex cases (not tested and therefore disabled)
+		//
+		if (((pSub->streamFlags & AUDCLNT_STREAMFLAGS_EVENTCALLBACK) == 0) &&
+			(output && !pSub->params.full_duplex))
+		{
+			UINT32 alignedFrames;
+			REFERENCE_TIME userPeriodicity;
+
+			// Align frames backwards, so device will likely make buffer read ready when we are ready
+			// to read it (our sheduling will wait for amount of millisoconds of frames_per_buffer)
+			alignedFrames = AlignFramesPerBuffer(pSub->params.frames_per_buffer,
+				pSub->wavex.Format.nSamplesPerSec, pSub->wavex.Format.nBlockAlign, ALIGN_BWD);
+
+			userPeriodicity = MakeHnsPeriod(alignedFrames, pSub->wavex.Format.nSamplesPerSec);
+
+			// Must not be larger than buffer size
+			if (userPeriodicity > pSub->period)
+				userPeriodicity = pSub->period;
+
+			// Must not be smaller than minimum supported by the device
+			if (userPeriodicity < pInfo->MinimumDevicePeriod)
+				userPeriodicity = pInfo->MinimumDevicePeriod;
+
+			(*periodicity) = userPeriodicity;
+		}
+	}
+	else
+		(*periodicity) = 0;
+}
+
+// ------------------------------------------------------------------------------------------
 static HRESULT CreateAudioClient(PaWasapiStream *pStream, PaWasapiSubStream *pSub, BOOL output, PaError *pa_error)
 {
 	PaError error;
     HRESULT hr;
-
 	const PaWasapiDeviceInfo *pInfo  = pSub->params.device_info;
 	const PaStreamParameters *params = &pSub->params.stream_params;
-	UINT32 framesPerLatency          = pSub->params.frames_per_buffer;
-	double sampleRate                = pSub->params.sample_rate;
-	//BOOL blocking                    = pSub->params.blocking;
-	BOOL fullDuplex                  = pSub->params.full_duplex;
-
-	const UINT32 userFramesPerBuffer = framesPerLatency;
-    IAudioClient *audioClient	     = NULL;
+	const double sampleRate          = pSub->params.sample_rate;
+	const BOOL fullDuplex            = pSub->params.full_duplex;
+	const UINT32 userFramesPerBuffer = pSub->params.frames_per_buffer;
+	UINT32 framesPerLatency          = userFramesPerBuffer;
+	IAudioClient *audioClient	     = NULL;
+	REFERENCE_TIME eventPeriodicity  = 0;
 
 	// Assume default failure due to some reason
 	(*pa_error) = paInvalidDevice;
@@ -2785,8 +3036,7 @@ static HRESULT CreateAudioClient(PaWasapiStream *pStream, PaWasapiSubStream *pSu
 	}
 
     // Get the audio client
-    hr = ActivateAudioInterface(pInfo, &audioClient);
-	if (hr != S_OK)
+	if (FAILED(hr = ActivateAudioInterface(pInfo, &pSub->params.wasapi_params, &audioClient)))
 	{
 		(*pa_error) = paInsufficientMemory;
 		LogHostError(hr);
@@ -2804,14 +3054,8 @@ static HRESULT CreateAudioClient(PaWasapiStream *pStream, PaWasapiSubStream *pSu
 	// Check for Mono <<>> Stereo workaround
 	if ((params->channelCount == 1) && (pSub->wavex.Format.nChannels == 2))
 	{
-		/*if (blocking)
-		{
-			LogHostError(hr = AUDCLNT_E_UNSUPPORTED_FORMAT);
-			goto done; // fail, blocking mode not supported
-		}*/
-
 		// select mixer
-		pSub->monoMixer = GetMonoToStereoMixer(WaveToPaFormat(&pSub->wavex), (pInfo->flow == eRender ? MIX_DIR__1TO2 : MIX_DIR__2TO1_L));
+		pSub->monoMixer = GetMonoToStereoMixer(&pSub->wavex, (pInfo->flow == eRender ? MIX_DIR__1TO2 : MIX_DIR__2TO1_L));
 		if (pSub->monoMixer == NULL)
 		{
 			(*pa_error) = paInvalidChannelCount;
@@ -2820,10 +3064,6 @@ static HRESULT CreateAudioClient(PaWasapiStream *pStream, PaWasapiSubStream *pSu
 		}
 	}
 
-#if 0
-	// Add suggestd latency
-	framesPerLatency += MakeFramesFromHns(SecondsTonano100(params->suggestedLatency), pSub->wavex.Format.nSamplesPerSec);
-#else
 	// Calculate host buffer size
 	if ((pSub->shareMode != AUDCLNT_SHAREMODE_EXCLUSIVE) &&
 		(!pSub->streamFlags || ((pSub->streamFlags & AUDCLNT_STREAMFLAGS_EVENTCALLBACK) == 0)))
@@ -2834,15 +3074,18 @@ static HRESULT CreateAudioClient(PaWasapiStream *pStream, PaWasapiSubStream *pSu
 	}
 	else
 	{
+	#ifdef PA_WASAPI_FORCE_POLL_IF_LARGE_BUFFER
 		REFERENCE_TIME overall;
+	#endif
 
 		// Work 1:1 with user buffer (only polling allows to use >1)
 		framesPerLatency += MakeFramesFromHns(SecondsTonano100(params->suggestedLatency), pSub->wavex.Format.nSamplesPerSec);
 
-		// Use Polling if overall latency is > 5ms as it allows to use 100% CPU in a callback,
-		// or user specified latency parameter
+		// Force Polling if overall latency is >= 21.33ms as it allows to use 100% CPU in a callback,
+		// or user specified latency parameter.
+	#ifdef PA_WASAPI_FORCE_POLL_IF_LARGE_BUFFER
 		overall = MakeHnsPeriod(framesPerLatency, pSub->wavex.Format.nSamplesPerSec);
-		if ((overall >= (106667*2)/*21.33ms*/) || ((INT32)(params->suggestedLatency*100000.0) != 0/*0.01 msec granularity*/))
+		if (overall >= (106667 * 2)/*21.33ms*/)
 		{
 			framesPerLatency = _GetFramesPerHostBuffer(userFramesPerBuffer,
 				params->suggestedLatency, pSub->wavex.Format.nSamplesPerSec, 0/*,
@@ -2852,8 +3095,8 @@ static HRESULT CreateAudioClient(PaWasapiStream *pStream, PaWasapiSubStream *pSu
 			pSub->streamFlags &= ~AUDCLNT_STREAMFLAGS_EVENTCALLBACK;
 			PRINT(("WASAPI: CreateAudioClient: forcing POLL mode\n"));
 		}
+	#endif
 	}
-#endif
 
 	// For full-duplex output resize buffer to be the same as for input
 	if (output && fullDuplex)
@@ -2869,9 +3112,7 @@ static HRESULT CreateAudioClient(PaWasapiStream *pStream, PaWasapiSubStream *pSu
 	{
 		// Do it only for Polling mode
 		if ((pSub->streamFlags & AUDCLNT_STREAMFLAGS_EVENTCALLBACK) == 0)
-		{
 			framesPerLatency /= WASAPI_PACKETS_PER_INPUT_BUFFER;
-		}
 	}
 
 	// Calculate aligned period
@@ -2885,6 +3126,7 @@ static HRESULT CreateAudioClient(PaWasapiStream *pStream, PaWasapiSubStream *pSu
 		if (pSub->period < pInfo->DefaultDevicePeriod)
 		{
 			pSub->period = pInfo->DefaultDevicePeriod;
+
 			// Recalculate aligned period
 			framesPerLatency = MakeFramesFromHns(pSub->period, pSub->wavex.Format.nSamplesPerSec);
 			_CalculateAlignedPeriod(pSub, &framesPerLatency, ALIGN_BWD);
@@ -2895,6 +3137,7 @@ static HRESULT CreateAudioClient(PaWasapiStream *pStream, PaWasapiSubStream *pSu
 		if (pSub->period < pInfo->MinimumDevicePeriod)
 		{
 			pSub->period = pInfo->MinimumDevicePeriod;
+
 			// Recalculate aligned period
 			framesPerLatency = MakeFramesFromHns(pSub->period, pSub->wavex.Format.nSamplesPerSec);
 			_CalculateAlignedPeriod(pSub, &framesPerLatency, ALIGN_FWD);
@@ -2916,21 +3159,25 @@ static HRESULT CreateAudioClient(PaWasapiStream *pStream, PaWasapiSubStream *pSu
 			static const REFERENCE_TIME MAX_BUFFER_EVENT_DURATION = 500  * 10000;
 			static const REFERENCE_TIME MAX_BUFFER_POLL_DURATION  = 2000 * 10000;
 
-			if (pSub->streamFlags & AUDCLNT_STREAMFLAGS_EVENTCALLBACK)	// pull mode, max 500ms
+			// Pull mode, max 500ms
+			if (pSub->streamFlags & AUDCLNT_STREAMFLAGS_EVENTCALLBACK)
 			{
 				if (pSub->period > MAX_BUFFER_EVENT_DURATION)
 				{
 					pSub->period = MAX_BUFFER_EVENT_DURATION;
+
 					// Recalculate aligned period
 					framesPerLatency = MakeFramesFromHns(pSub->period, pSub->wavex.Format.nSamplesPerSec);
 					_CalculateAlignedPeriod(pSub, &framesPerLatency, ALIGN_BWD);
 				}
 			}
-			else														// push mode, max 2000ms
+			// Push mode, max 2000ms
+			else
 			{
 				if (pSub->period > MAX_BUFFER_POLL_DURATION)
 				{
 					pSub->period = MAX_BUFFER_POLL_DURATION;
+
 					// Recalculate aligned period
 					framesPerLatency = MakeFramesFromHns(pSub->period, pSub->wavex.Format.nSamplesPerSec);
 					_CalculateAlignedPeriod(pSub, &framesPerLatency, ALIGN_BWD);
@@ -2939,69 +3186,38 @@ static HRESULT CreateAudioClient(PaWasapiStream *pStream, PaWasapiSubStream *pSu
 		}
 	}
 
-	// Set Raw mode (applicable only to IAudioClient2)
-#ifdef __IAudioClient2_INTERFACE_DEFINED__
-	if (GetAudioClientVersion() >= 2)
-	{
-		pa_AudioClientProperties audioProps = { 0 };
-		audioProps.cbSize     = sizeof(pa_AudioClientProperties);
-		audioProps.bIsOffload = FALSE;
-		audioProps.eCategory  = (AUDIO_STREAM_CATEGORY)pSub->params.wasapi_params.streamCategory;
-		switch (pSub->params.wasapi_params.streamOption)
-		{
-		case eStreamOptionRaw:
-			if (GetWindowsVersion() >= WINDOWS_8_1_SERVER2012R2)
-				audioProps.Options = pa_AUDCLNT_STREAMOPTIONS_RAW;
-			break;
-		case eStreamOptionMatchFormat:
-			if (GetWindowsVersion() >= WINDOWS_10_SERVER2016)
-				audioProps.Options = pa_AUDCLNT_STREAMOPTIONS_MATCH_FORMAT;
-			break;
-		}
-
-		hr = IAudioClient2_SetClientProperties((IAudioClient2 *)audioClient, (AudioClientProperties *)&audioProps);
-		if (hr != S_OK)
-		{
-			PRINT(("WASAPI: IAudioClient2_SetClientProperties(IsOffload = %d, Category = %d, Options = %d) failed\n", audioProps.bIsOffload, audioProps.eCategory, audioProps.Options));
-			LogHostError(hr);
-		}
-		else
-		{
-			PRINT(("WASAPI: IAudioClient2 set properties: IsOffload = %d, Category = %d, Options = %d\n", audioProps.bIsOffload, audioProps.eCategory, audioProps.Options));
-		}
-	}
-#endif
+	// Set device scheduling period (always 0 in Shared mode according Microsoft docs)
+	_CalculatePeriodicity(pSub, output, &eventPeriodicity);
 
 	// Open the stream and associate it with an audio session
     hr = IAudioClient_Initialize(audioClient,
         pSub->shareMode,
         pSub->streamFlags,
 		pSub->period,
-		(pSub->shareMode == AUDCLNT_SHAREMODE_EXCLUSIVE ? pSub->period : 0),
+		eventPeriodicity,
 		&pSub->wavex.Format,
         NULL);
 
 	// [Output only] Check if buffer size is the one we requested in Exclusive mode, for UAC1 USB DACs WASAPI
-	// allocates internal buffer equal to 8 times of pSub->period that has to be corrected in order to match
+	// can allocate internal buffer equal to 8 times of pSub->period that has to be corrected in order to match
 	// the requested latency
-	if (output && (hr == S_OK) && (pSub->shareMode == AUDCLNT_SHAREMODE_EXCLUSIVE))
+	if (output && SUCCEEDED(hr) && (pSub->shareMode == AUDCLNT_SHAREMODE_EXCLUSIVE))
 	{
-		UINT32 maxBufferSize = 0;
+		UINT32 maxBufferFrames;
 
-		hr = IAudioClient_GetBufferSize(audioClient, &maxBufferSize);
-		if (hr != S_OK)
+		if (FAILED(hr = IAudioClient_GetBufferSize(audioClient, &maxBufferFrames)))
 		{
 			(*pa_error) = paInvalidDevice;
 			LogHostError(hr);
 			goto done;
 		}
 
-		// For Exclusive mode for UAC1 devices maxBufferSize will be framesPerLatency * 8 but check any difference
+		// For Exclusive mode for UAC1 devices maxBufferFrames may be framesPerLatency * 8 but check any difference
 		// to be able to guarantee the latency user requested and also resulted framesPerLatency may be bigger than
 		// 2 seconds that will cause audio client not operational (GetCurrentPadding() will return always 0)
-		if (maxBufferSize >= (framesPerLatency * 2))
+		if (maxBufferFrames >= (framesPerLatency * 2))
 		{
-			UINT32 ratio = maxBufferSize / framesPerLatency;
+			UINT32 ratio = maxBufferFrames / framesPerLatency;
 
 			PRINT(("WASAPI: CreateAudioClient: detected %d times larger buffer than requested, correct to match user latency\n", ratio));
 
@@ -3009,24 +3225,30 @@ static HRESULT CreateAudioClient(PaWasapiStream *pStream, PaWasapiSubStream *pSu
 			framesPerLatency = MakeFramesFromHns(pSub->period / ratio, pSub->wavex.Format.nSamplesPerSec);
 			_CalculateAlignedPeriod(pSub, &framesPerLatency, ALIGN_BWD);
 
+			// Make sure we are not below the minimum period
+			if (pSub->period < pInfo->MinimumDevicePeriod)
+				pSub->period = pInfo->MinimumDevicePeriod;
+
 			// Release previous client
 			SAFE_RELEASE(audioClient);
 
 			// Create a new audio client
-			hr = ActivateAudioInterface(pInfo, &audioClient);
-    		if (hr != S_OK)
+    		if (FAILED(hr = ActivateAudioInterface(pInfo, &pSub->params.wasapi_params, &audioClient)))
 			{
 				(*pa_error) = paInsufficientMemory;
 				LogHostError(hr);
 				goto done;
 			}
 
+			// Set device scheduling period (always 0 in Shared mode according Microsoft docs)
+			_CalculatePeriodicity(pSub, output, &eventPeriodicity);
+
 			// Open the stream and associate it with an audio session
 			hr = IAudioClient_Initialize(audioClient,
 				pSub->shareMode,
 				pSub->streamFlags,
 				pSub->period,
-				(pSub->shareMode == AUDCLNT_SHAREMODE_EXCLUSIVE ? pSub->period : 0),
+				eventPeriodicity,
 				&pSub->wavex.Format,
 				NULL);
 		}
@@ -3051,132 +3273,61 @@ static HRESULT CreateAudioClient(PaWasapiStream *pStream, PaWasapiSubStream *pSu
         SAFE_RELEASE(audioClient);
 
         // Create a new audio client
-        hr = ActivateAudioInterface(pInfo, &audioClient);
-    	if (hr != S_OK)
+    	if (FAILED(hr = ActivateAudioInterface(pInfo, &pSub->params.wasapi_params, &audioClient)))
 		{
 			(*pa_error) = paInsufficientMemory;
 			LogHostError(hr);
 			goto done;
 		}
 
+		// Set device scheduling period (always 0 in Shared mode according Microsoft docs)
+		_CalculatePeriodicity(pSub, output, &eventPeriodicity);
+
 		// Open the stream and associate it with an audio session
 		hr = IAudioClient_Initialize(audioClient,
 			pSub->shareMode,
 			pSub->streamFlags,
 			pSub->period,
-			(pSub->shareMode == AUDCLNT_SHAREMODE_EXCLUSIVE ? pSub->period : 0),
+			eventPeriodicity,
 			&pSub->wavex.Format,
 			NULL);
 	}
 
-	/*! WASAPI buffer size failure. Fallback to using default size.
+	/*! WASAPI buffer size or alignment failure. Fallback to using default size and alignment.
 	*/
-	if (hr == AUDCLNT_E_BUFFER_SIZE_ERROR)
+	if ((hr == AUDCLNT_E_BUFFER_SIZE_ERROR) || (hr == AUDCLNT_E_BUFFER_SIZE_NOT_ALIGNED))
 	{
 		// Use default
 		pSub->period = pInfo->DefaultDevicePeriod;
 
-		PRINT(("WASAPI: CreateAudioClient: correcting buffer size to device default\n"));
+		PRINT(("WASAPI: CreateAudioClient: correcting buffer size/alignment to device default\n"));
 
         // Release the previous allocations
         SAFE_RELEASE(audioClient);
 
         // Create a new audio client
-        hr = ActivateAudioInterface(pInfo, &audioClient);
-    	if (hr != S_OK)
+    	if (FAILED(hr = ActivateAudioInterface(pInfo, &pSub->params.wasapi_params, &audioClient)))
 		{
 			(*pa_error) = paInsufficientMemory;
 			LogHostError(hr);
 			goto done;
 		}
+
+		// Set device scheduling period (always 0 in Shared mode according Microsoft docs)
+		_CalculatePeriodicity(pSub, output, &eventPeriodicity);
 
 		// Open the stream and associate it with an audio session
 		hr = IAudioClient_Initialize(audioClient,
 			pSub->shareMode,
 			pSub->streamFlags,
 			pSub->period,
-			(pSub->shareMode == AUDCLNT_SHAREMODE_EXCLUSIVE ? pSub->period : 0),
+			eventPeriodicity,
 			&pSub->wavex.Format,
 			NULL);
 	}
 
-    /*! If the requested buffer size is not aligned. Can be triggered by Windows 7 and up.
-	    Should not be be triggered ever as we do align buffers always with _CalculateAlignedPeriod.
-	*/
-    if (hr == AUDCLNT_E_BUFFER_SIZE_NOT_ALIGNED)
-    {
-		UINT32 frames = 0;
-
-        // Get the next aligned frame
-        hr = IAudioClient_GetBufferSize(audioClient, &frames);
-		if (hr != S_OK)
-		{
-			(*pa_error) = paInvalidDevice;
-			LogHostError(hr);
-			goto done;
-		}
-
-		PRINT(("WASAPI: CreateAudioClient: aligning buffer size to % frames\n", frames));
-
-        // Release the previous allocations
-        SAFE_RELEASE(audioClient);
-
-        // Create a new audio client
-        hr = ActivateAudioInterface(pInfo, &audioClient);
-    	if (hr != S_OK)
-		{
-			(*pa_error) = paInsufficientMemory;
-			LogHostError(hr);
-			goto done;
-		}
-
-		// Get closest format
-		if ((error = GetClosestFormat(audioClient, sampleRate, params, pSub->shareMode, &pSub->wavex, output)) != paFormatIsSupported)
-		{
-			(*pa_error) = error;
-			LogHostError(hr = AUDCLNT_E_UNSUPPORTED_FORMAT); // fail, format not supported
-			goto done;
-		}
-
-		// Check for Mono >> Stereo workaround
-		if ((params->channelCount == 1) && (pSub->wavex.Format.nChannels == 2))
-		{
-			/*if (blocking)
-			{
-				LogHostError(hr = AUDCLNT_E_UNSUPPORTED_FORMAT);
-				goto done; // fail, blocking mode not supported
-			}*/
-
-			// Select mixer
-			pSub->monoMixer = GetMonoToStereoMixer(WaveToPaFormat(&pSub->wavex), (pInfo->flow == eRender ? MIX_DIR__1TO2 : MIX_DIR__2TO1_L));
-			if (pSub->monoMixer == NULL)
-			{
-				(*pa_error) = paInvalidChannelCount;
-				LogHostError(hr = AUDCLNT_E_UNSUPPORTED_FORMAT);
-				goto done; // fail, no mixer for format
-			}
-		}
-
-		// Calculate period
-		pSub->period = MakeHnsPeriod(frames, pSub->wavex.Format.nSamplesPerSec);
-
-        // Open the stream and associate it with an audio session
-        hr = IAudioClient_Initialize(audioClient,
-            pSub->shareMode,
-            pSub->streamFlags,
-			pSub->period,
-			(pSub->shareMode == AUDCLNT_SHAREMODE_EXCLUSIVE ? pSub->period : 0),
-            &pSub->wavex.Format,
-            NULL);
-    	if (hr != S_OK)
-		{
-			(*pa_error) = paInvalidDevice;
-			LogHostError(hr);
-			goto done;
-		}
-    }
-    else
-	if (hr != S_OK)
+	// Error has no workaround, fail completely
+ 	if (FAILED(hr))
     {
 		(*pa_error) = paInvalidDevice;
 		LogHostError(hr);
@@ -3188,9 +3339,7 @@ static HRESULT CreateAudioClient(PaWasapiStream *pStream, PaWasapiSubStream *pSu
     IAudioClient_AddRef(pSub->clientParent);
 
 	// Recalculate buffers count
-	_RecalculateBuffersCount(pSub,
-		userFramesPerBuffer,
-		MakeFramesFromHns(pSub->period, pSub->wavex.Format.nSamplesPerSec),
+	_RecalculateBuffersCount(pSub, userFramesPerBuffer, MakeFramesFromHns(pSub->period, pSub->wavex.Format.nSamplesPerSec),
 		fullDuplex);
 
 	// No error, client is succesfully created
@@ -3208,14 +3357,12 @@ static PaError ActivateAudioClientOutput(PaWasapiStream *stream)
 {
 	HRESULT hr;
 	PaError result;
-
-	UINT32 maxBufferSize   = 0;
-	PaTime buffer_latency  = 0;
-	UINT32 framesPerBuffer = stream->out.params.frames_per_buffer;
+	UINT32 maxBufferSize;
+	PaTime bufferLatency;
+	const UINT32 framesPerBuffer = stream->out.params.frames_per_buffer;
 
 	// Create Audio client
-	hr = CreateAudioClient(stream, &stream->out, TRUE, &result);
-    if (hr != S_OK)
+    if (FAILED(hr = CreateAudioClient(stream, &stream->out, TRUE, &result)))
 	{
 		LogPaError(result);
 		goto error;
@@ -3231,8 +3378,7 @@ static PaError ActivateAudioClientOutput(PaWasapiStream *stream)
         return paInvalidDevice;*/
 
     // Get max possible buffer size to check if it is not less than that we request
-    hr = IAudioClient_GetBufferSize(stream->out.clientParent, &maxBufferSize);
-    if (hr != S_OK)
+    if (FAILED(hr = IAudioClient_GetBufferSize(stream->out.clientParent, &maxBufferSize)))
 	{
 		LogHostError(hr);
 		LogPaError(result = paInvalidDevice);
@@ -3242,10 +3388,8 @@ static PaError ActivateAudioClientOutput(PaWasapiStream *stream)
     // Correct buffer to max size if it maxed out result of GetBufferSize
 	stream->out.bufferSize = maxBufferSize;
 
-	// Get interface latency (actually uneeded as we calculate latency from the size
-	// of maxBufferSize).
-    hr = IAudioClient_GetStreamLatency(stream->out.clientParent, &stream->out.deviceLatency);
-    if (hr != S_OK)
+	// Get interface latency (actually uneeded as we calculate latency from the size of maxBufferSize)
+    if (FAILED(hr = IAudioClient_GetStreamLatency(stream->out.clientParent, &stream->out.deviceLatency)))
 	{
 		LogHostError(hr);
 		LogPaError(result = paInvalidDevice);
@@ -3261,10 +3405,10 @@ static PaError ActivateAudioClientOutput(PaWasapiStream *stream)
 		(stream->out.userBufferAndHostMatch ? stream->out.framesPerHostCallback : framesPerBuffer);
 
 	// Calculate buffer latency
-	buffer_latency = (PaTime)maxBufferSize / stream->out.wavex.Format.nSamplesPerSec;
+	bufferLatency = (PaTime)maxBufferSize / stream->out.wavex.Format.nSamplesPerSec;
 
 	// Append buffer latency to interface latency in shared mode (see GetStreamLatency notes)
-	stream->out.latencySeconds = buffer_latency;
+	stream->out.latencySeconds = bufferLatency;
 
 	PRINT(("WASAPI::OpenStream(output): framesPerUser[ %d ] framesPerHost[ %d ] latency[ %.02fms ] exclusive[ %s ] wow64_fix[ %s ] mode[ %s ]\n", (UINT32)framesPerBuffer, (UINT32)stream->out.framesPerHostCallback, (float)(stream->out.latencySeconds*1000.0f), (stream->out.shareMode == AUDCLNT_SHAREMODE_EXCLUSIVE ? "YES" : "NO"), (stream->out.params.wow64_workaround ? "YES" : "NO"), (stream->out.streamFlags & AUDCLNT_STREAMFLAGS_EVENTCALLBACK ? "EVENT" : "POLL")));
 
@@ -3280,14 +3424,12 @@ static PaError ActivateAudioClientInput(PaWasapiStream *stream)
 {
 	HRESULT hr;
 	PaError result;
-
-	UINT32 maxBufferSize   = 0;
-	PaTime buffer_latency  = 0;
-	UINT32 framesPerBuffer = stream->in.params.frames_per_buffer;
+	UINT32 maxBufferSize;
+	PaTime bufferLatency;
+	const UINT32 framesPerBuffer = stream->in.params.frames_per_buffer;
 
 	// Create Audio client
-	hr = CreateAudioClient(stream, &stream->in, FALSE, &result);
-    if (hr != S_OK)
+    if (FAILED(hr = CreateAudioClient(stream, &stream->in, FALSE, &result)))
 	{
 		LogPaError(result);
 		goto error;
@@ -3303,8 +3445,7 @@ static PaError ActivateAudioClientInput(PaWasapiStream *stream)
         return paInvalidDevice;*/
 
     // Get max possible buffer size to check if it is not less than that we request
-    hr = IAudioClient_GetBufferSize(stream->in.clientParent, &maxBufferSize);
-    if (hr != S_OK)
+    if (FAILED(hr = IAudioClient_GetBufferSize(stream->in.clientParent, &maxBufferSize)))
 	{
 		LogHostError(hr);
 		LogPaError(result = paInvalidDevice);
@@ -3316,8 +3457,7 @@ static PaError ActivateAudioClientInput(PaWasapiStream *stream)
 
 	// Get interface latency (actually uneeded as we calculate latency from the size
 	// of maxBufferSize).
-    hr = IAudioClient_GetStreamLatency(stream->in.clientParent, &stream->in.deviceLatency);
-    if (hr != S_OK)
+    if (FAILED(hr = IAudioClient_GetStreamLatency(stream->in.clientParent, &stream->in.deviceLatency)))
 	{
 		LogHostError(hr);
 		LogPaError(result = paInvalidDevice);
@@ -3333,10 +3473,10 @@ static PaError ActivateAudioClientInput(PaWasapiStream *stream)
 		(stream->in.userBufferAndHostMatch ? stream->in.framesPerHostCallback : framesPerBuffer);
 
 	// Calculate buffer latency
-	buffer_latency = (PaTime)maxBufferSize / stream->in.wavex.Format.nSamplesPerSec;
+	bufferLatency = (PaTime)maxBufferSize / stream->in.wavex.Format.nSamplesPerSec;
 
 	// Append buffer latency to interface latency in shared mode (see GetStreamLatency notes)
-	stream->in.latencySeconds = buffer_latency;
+	stream->in.latencySeconds = bufferLatency;
 
 	PRINT(("WASAPI::OpenStream(input): framesPerUser[ %d ] framesPerHost[ %d ] latency[ %.02fms ] exclusive[ %s ] wow64_fix[ %s ] mode[ %s ]\n", (UINT32)framesPerBuffer, (UINT32)stream->in.framesPerHostCallback, (float)(stream->in.latencySeconds*1000.0f), (stream->in.shareMode == AUDCLNT_SHAREMODE_EXCLUSIVE ? "YES" : "NO"), (stream->in.params.wow64_workaround ? "YES" : "NO"), (stream->in.streamFlags & AUDCLNT_STREAMFLAGS_EVENTCALLBACK ? "EVENT" : "POLL")));
 
@@ -3469,6 +3609,12 @@ static PaError OpenStream( struct PaUtilHostApiRepresentation *hostApi,
 		if (fullDuplex)
 			stream->in.streamFlags = 0; // polling interface is implemented for full-duplex mode also
 
+		// Use built-in PCM converter (channel count and sample rate) if requested
+		if ((GetWindowsVersion() >= WINDOWS_7_SERVER2008R2) &&
+			(stream->in.shareMode == AUDCLNT_SHAREMODE_SHARED) &&
+			((inputStreamInfo != NULL) && (inputStreamInfo->flags & paWinWasapiAutoConvert)))
+			stream->in.streamFlags |= (AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM | AUDCLNT_STREAMFLAGS_SRC_DEFAULT_QUALITY);
+
 		// Fill parameters for Audio Client creation
 		stream->in.params.device_info       = info;
 		stream->in.params.stream_params     = (*inputParameters);
@@ -3479,8 +3625,7 @@ static PaError OpenStream( struct PaUtilHostApiRepresentation *hostApi,
 		stream->in.params.wow64_workaround  = paWasapi->useWOW64Workaround;
 
 		// Create and activate audio client
-		hr = ActivateAudioClientInput(stream);
-        if (hr != S_OK)
+        if (FAILED(hr = ActivateAudioClientInput(stream)))
 		{
 			LogPaError(result = paInvalidDevice);
 			goto error;
@@ -3498,8 +3643,7 @@ static PaError OpenStream( struct PaUtilHostApiRepresentation *hostApi,
         }
 
 		// Only get IAudioCaptureClient input once here instead of getting it at multiple places based on the use
-		hr = IAudioClient_GetService(stream->in.clientParent, &pa_IID_IAudioCaptureClient, (void **)&stream->captureClientParent);
-		if (hr != S_OK)
+		if (FAILED(hr = IAudioClient_GetService(stream->in.clientParent, &pa_IID_IAudioCaptureClient, (void **)&stream->captureClientParent)))
 		{
 			LogHostError(hr);
 			LogPaError(result = paUnanticipatedHostError);
@@ -3599,6 +3743,12 @@ static PaError OpenStream( struct PaUtilHostApiRepresentation *hostApi,
 		if (fullDuplex)
 			stream->out.streamFlags = 0; // polling interface is implemented for full-duplex mode also
 
+		// Use built-in PCM converter (channel count and sample rate) if requested
+		if ((GetWindowsVersion() >= WINDOWS_7_SERVER2008R2) &&
+			(stream->out.shareMode == AUDCLNT_SHAREMODE_SHARED) &&
+			((outputStreamInfo != NULL) && (outputStreamInfo->flags & paWinWasapiAutoConvert)))
+			stream->out.streamFlags |= (AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM | AUDCLNT_STREAMFLAGS_SRC_DEFAULT_QUALITY);
+
 		// Fill parameters for Audio Client creation
 		stream->out.params.device_info       = info;
 		stream->out.params.stream_params     = (*outputParameters);
@@ -3609,8 +3759,7 @@ static PaError OpenStream( struct PaUtilHostApiRepresentation *hostApi,
 		stream->out.params.wow64_workaround  = paWasapi->useWOW64Workaround;
 
 		// Create and activate audio client
-		hr = ActivateAudioClientOutput(stream);
-        if (hr != S_OK)
+        if (FAILED(hr = ActivateAudioClientOutput(stream)))
 		{
 			LogPaError(result = paInvalidDevice);
 			goto error;
@@ -3628,8 +3777,7 @@ static PaError OpenStream( struct PaUtilHostApiRepresentation *hostApi,
         }
 
 		// Only get IAudioCaptureClient output once here instead of getting it at multiple places based on the use
-		hr = IAudioClient_GetService(stream->out.clientParent, &pa_IID_IAudioRenderClient, (void **)&stream->renderClientParent);
-		if (hr != S_OK)
+		if (FAILED(hr = IAudioClient_GetService(stream->out.clientParent, &pa_IID_IAudioRenderClient, (void **)&stream->renderClientParent)))
 		{
 			LogHostError(hr);
 			LogPaError(result = paUnanticipatedHostError);
@@ -4744,19 +4892,19 @@ static void MMCSS_deactivate(HANDLE hTask)
 #endif
 
 // ------------------------------------------------------------------------------------------
-PaError PaWasapi_ThreadPriorityBoost(void **hTask, PaWasapiThreadPriority nPriorityClass)
+PaError PaWasapi_ThreadPriorityBoost(void **pTask, PaWasapiThreadPriority priorityClass)
 {
 	HANDLE task;
 	PaError ret;
 
-	if (hTask == NULL)
+	if (pTask == NULL)
 		return paUnanticipatedHostError;
 
 #ifndef PA_WINRT
-	if ((ret = MMCSS_activate(nPriorityClass, &task)) != paNoError)
+	if ((ret = MMCSS_activate(priorityClass, &task)) != paNoError)
 		return ret;
 #else
-	switch (nPriorityClass)
+	switch (priorityClass)
 	{
 	case eThreadPriorityAudio:
 	case eThreadPriorityProAudio: {
@@ -4780,21 +4928,21 @@ PaError PaWasapi_ThreadPriorityBoost(void **hTask, PaWasapiThreadPriority nPrior
 	}
 #endif
 
-	(*hTask) = task;
+	(*pTask) = task;
 	return ret;
 }
 
 // ------------------------------------------------------------------------------------------
-PaError PaWasapi_ThreadPriorityRevert(void *hTask)
+PaError PaWasapi_ThreadPriorityRevert(void *pTask)
 {
-	if (hTask == NULL)
+	if (pTask == NULL)
 		return paUnanticipatedHostError;
 
 #ifndef PA_WINRT
-	MMCSS_deactivate((HANDLE)hTask);
+	MMCSS_deactivate((HANDLE)pTask);
 #else
 	// Revert previous priority by removing 0x80000000 mask
-	if (SetThreadPriority(GetCurrentThread(), (int)((intptr_t)hTask & ~0x80000000)) == FALSE)
+	if (SetThreadPriority(GetCurrentThread(), (int)((intptr_t)pTask & ~0x80000000)) == FALSE)
 		return paUnanticipatedHostError;
 #endif
 
@@ -4805,7 +4953,7 @@ PaError PaWasapi_ThreadPriorityRevert(void *hTask)
 // Described at:
 // http://msdn.microsoft.com/en-us/library/dd371387(v=VS.85).aspx
 
-PaError PaWasapi_GetJackCount(PaDeviceIndex nDevice, int *jcount)
+PaError PaWasapi_GetJackCount(PaDeviceIndex device, int *pJackCount)
 {
 #ifndef PA_WINRT
 	PaError ret;
@@ -4822,47 +4970,50 @@ PaError PaWasapi_GetJackCount(PaDeviceIndex nDevice, int *jcount)
 	if (paWasapi == NULL)
 		return paNotInitialized;
 
-	// Get device index.
-	ret = PaUtil_DeviceIndexToHostApiDeviceIndex(&index, nDevice, &paWasapi->inheritedHostApiRep);
+	if (pJackCount == NULL)
+		return paUnanticipatedHostError;
+
+	// Get device index
+	ret = PaUtil_DeviceIndexToHostApiDeviceIndex(&index, device, &paWasapi->inheritedHostApiRep);
     if (ret != paNoError)
         return ret;
 
-	// Validate index.
+	// Validate index
 	if ((UINT32)index >= paWasapi->deviceCount)
 		return paInvalidDevice;
 
-	// Get the endpoint device's IDeviceTopology interface.
+	// Get the endpoint device's IDeviceTopology interface
 	hr = IMMDevice_Activate(paWasapi->devInfo[index].device, &pa_IID_IDeviceTopology,
 		CLSCTX_INPROC_SERVER, NULL, (void**)&pDeviceTopology);
 	IF_FAILED_JUMP(hr, error);
 
-    // The device topology for an endpoint device always contains just one connector (connector number 0).
+    // The device topology for an endpoint device always contains just one connector (connector number 0)
 	hr = IDeviceTopology_GetConnector(pDeviceTopology, 0, &pConnFrom);
 	IF_FAILED_JUMP(hr, error);
 
-    // Step across the connection to the jack on the adapter.
+    // Step across the connection to the jack on the adapter
 	hr = IConnector_GetConnectedTo(pConnFrom, &pConnTo);
     if (HRESULT_FROM_WIN32(ERROR_PATH_NOT_FOUND) == hr)
     {
-        // The adapter device is not currently active.
+        // The adapter device is not currently active
         hr = E_NOINTERFACE;
     }
 	IF_FAILED_JUMP(hr, error);
 
-	// Get the connector's IPart interface.
+	// Get the connector's IPart interface
 	hr = IConnector_QueryInterface(pConnTo, &pa_IID_IPart, (void**)&pPart);
 	IF_FAILED_JUMP(hr, error);
 
-	// Activate the connector's IKsJackDescription interface.
+	// Activate the connector's IKsJackDescription interface
 	hr = IPart_Activate(pPart, CLSCTX_INPROC_SERVER, &pa_IID_IKsJackDescription, (void**)&pJackDesc);
 	IF_FAILED_JUMP(hr, error);
 
-	// Return jack count for this device.
+	// Return jack count for this device
 	hr = IKsJackDescription_GetJackCount(pJackDesc, &jackCount);
 	IF_FAILED_JUMP(hr, error);
 
 	// Set.
-	(*jcount) = jackCount;
+	(*pJackCount) = jackCount;
 
 	// Ok.
 	ret = paNoError;
@@ -4878,8 +5029,8 @@ error:
 	LogHostError(hr);
 	return paNoError;
 #else
-	(void)nDevice;
-	(void)jcount;
+	(void)device;
+	(void)pJackCount;
 	return paUnanticipatedHostError;
 #endif
 }
@@ -4977,7 +5128,7 @@ static PaWasapiJackPortConnection _ConvertJackPortConnectionWASAPIToPA(int portC
 // Described at:
 // http://msdn.microsoft.com/en-us/library/dd371387(v=VS.85).aspx
 
-PaError PaWasapi_GetJackDescription(PaDeviceIndex nDevice, int jindex, PaWasapiJackDescription *pJackDescription)
+PaError PaWasapi_GetJackDescription(PaDeviceIndex device, int jackIndex, PaWasapiJackDescription *pJackDescription)
 {
 #ifndef PA_WINRT
 	PaError ret;
@@ -4994,46 +5145,46 @@ PaError PaWasapi_GetJackDescription(PaDeviceIndex nDevice, int jindex, PaWasapiJ
 	if (paWasapi == NULL)
 		return paNotInitialized;
 
-	// Get device index.
-	ret = PaUtil_DeviceIndexToHostApiDeviceIndex(&index, nDevice, &paWasapi->inheritedHostApiRep);
+	// Get device index
+	ret = PaUtil_DeviceIndexToHostApiDeviceIndex(&index, device, &paWasapi->inheritedHostApiRep);
     if (ret != paNoError)
         return ret;
 
-	// Validate index.
+	// Validate index
 	if ((UINT32)index >= paWasapi->deviceCount)
 		return paInvalidDevice;
 
-	// Get the endpoint device's IDeviceTopology interface.
+	// Get the endpoint device's IDeviceTopology interface
 	hr = IMMDevice_Activate(paWasapi->devInfo[index].device, &pa_IID_IDeviceTopology,
 		CLSCTX_INPROC_SERVER, NULL, (void**)&pDeviceTopology);
 	IF_FAILED_JUMP(hr, error);
 
-    // The device topology for an endpoint device always contains just one connector (connector number 0).
+    // The device topology for an endpoint device always contains just one connector (connector number 0)
 	hr = IDeviceTopology_GetConnector(pDeviceTopology, 0, &pConnFrom);
 	IF_FAILED_JUMP(hr, error);
 
-    // Step across the connection to the jack on the adapter.
+    // Step across the connection to the jack on the adapter
 	hr = IConnector_GetConnectedTo(pConnFrom, &pConnTo);
     if (HRESULT_FROM_WIN32(ERROR_PATH_NOT_FOUND) == hr)
     {
-        // The adapter device is not currently active.
+        // The adapter device is not currently active
         hr = E_NOINTERFACE;
     }
 	IF_FAILED_JUMP(hr, error);
 
-	// Get the connector's IPart interface.
+	// Get the connector's IPart interface
 	hr = IConnector_QueryInterface(pConnTo, &pa_IID_IPart, (void**)&pPart);
 	IF_FAILED_JUMP(hr, error);
 
-	// Activate the connector's IKsJackDescription interface.
+	// Activate the connector's IKsJackDescription interface
 	hr = IPart_Activate(pPart, CLSCTX_INPROC_SERVER, &pa_IID_IKsJackDescription, (void**)&pJackDesc);
 	IF_FAILED_JUMP(hr, error);
 
-	// Test to return jack description struct for index 0.
-	hr = IKsJackDescription_GetJackDescription(pJackDesc, jindex, &jack);
+	// Test to return jack description struct for index 0
+	hr = IKsJackDescription_GetJackDescription(pJackDesc, jackIndex, &jack);
 	IF_FAILED_JUMP(hr, error);
 
-	// Convert WASAPI values to PA format.
+	// Convert WASAPI values to PA format
 	pJackDescription->channelMapping = jack.ChannelMapping;
 	pJackDescription->color          = jack.Color;
 	pJackDescription->connectionType = _ConvertJackConnectionTypeWASAPIToPA(jack.ConnectionType);
@@ -5042,7 +5193,7 @@ PaError PaWasapi_GetJackDescription(PaDeviceIndex nDevice, int jindex, PaWasapiJ
 	pJackDescription->isConnected    = jack.IsConnected;
 	pJackDescription->portConnection = _ConvertJackPortConnectionWASAPIToPA(jack.PortConnection);
 
-	// Ok.
+	// Ok
 	ret = paNoError;
 
 error:
@@ -5057,8 +5208,8 @@ error:
 	return ret;
 
 #else
-	(void)nDevice;
-	(void)jindex;
+	(void)device;
+	(void)jackIndex;
 	(void)pJackDescription;
 	return paUnanticipatedHostError;
 #endif
@@ -5083,11 +5234,12 @@ PaError PaWasapi_GetAudioClient(PaStream *pStream, void **pAudioClient, int bOut
 PaError PaWasapi_SetDefaultInterfaceId( unsigned short *pId, int bOutput )
 {
 #ifdef PA_WINRT
+	int i;
 
 	// Validate Id length
 	if (pId != NULL)
 	{
-		for (int i = 0; pId[i] != 0; ++i)
+		for (i = 0; pId[i] != 0; ++i)
 		{
 			if (i >= PA_WASAPI_DEVICE_ID_LEN)
 				return paBufferTooBig;
@@ -5100,7 +5252,7 @@ PaError PaWasapi_SetDefaultInterfaceId( unsigned short *pId, int bOutput )
 		memset(g_DefaultRenderId, 0, sizeof(g_DefaultRenderId));
 		if (pId != NULL)
 		{
-			for (int i = 0; (pId[i] != 0) && (i < STATIC_ARRAY_SIZE(g_DefaultRenderId)); ++i)
+			for (i = 0; (pId[i] != 0) && (i < STATIC_ARRAY_SIZE(g_DefaultRenderId)); ++i)
 				g_DefaultRenderId[i] = pId[i];
 		}
 	}
@@ -5109,7 +5261,7 @@ PaError PaWasapi_SetDefaultInterfaceId( unsigned short *pId, int bOutput )
 		memset(g_DefaultCaptureId, 0, sizeof(g_DefaultCaptureId));
 		if (pId != NULL)
 		{
-			for (int i = 0; (pId[i] != 0) && (i < STATIC_ARRAY_SIZE(g_DefaultCaptureId)); ++i)
+			for (i = 0; (pId[i] != 0) && (i < STATIC_ARRAY_SIZE(g_DefaultCaptureId)); ++i)
 				g_DefaultCaptureId[i] = pId[i];
 		}
 	}
@@ -5119,6 +5271,19 @@ PaError PaWasapi_SetDefaultInterfaceId( unsigned short *pId, int bOutput )
 #else
 	return paIncompatibleStreamHostApi;
 #endif
+}
+
+// ------------------------------------------------------------------------------------------
+PaError PaWasapi_SetStreamStateHandler( PaStream *pStream, PaWasapiStreamStateCallback fnStateHandler, void *pUserData )
+{
+	PaWasapiStream *stream = (PaWasapiStream *)pStream;
+	if (stream == NULL)
+		return paBadStreamPtr;
+
+	stream->fnStateHandler        = fnStateHandler;
+	stream->pStateHandlerUserData = pUserData;
+
+	return paNoError;
 }
 
 // ------------------------------------------------------------------------------------------
@@ -5165,13 +5330,15 @@ static HRESULT ProcessOutputBuffer(PaWasapiStream *stream, PaWasapiHostProcessor
 	// Get buffer
 	if ((hr = IAudioRenderClient_GetBuffer(stream->renderClient, frames, &data)) != S_OK)
 	{
+		// Both modes, Shared and Exclusive, can fail with AUDCLNT_E_BUFFER_TOO_LARGE error
+	#if 0
 		if (stream->out.shareMode == AUDCLNT_SHAREMODE_SHARED)
 		{
 			// Using GetCurrentPadding to overcome AUDCLNT_E_BUFFER_TOO_LARGE in
 			// shared mode results in no sound in Event-driven mode (MSDN does not
 			// document this, or is it WASAPI bug?), thus we better
 			// try to acquire buffer next time when GetBuffer allows to do so.
-#if 0
+		#if 0
 			// Get Read position
 			UINT32 padding = 0;
 			hr = IAudioClient_GetCurrentPadding(stream->out.clientProc, &padding);
@@ -5185,13 +5352,19 @@ static HRESULT ProcessOutputBuffer(PaWasapiStream *stream, PaWasapiHostProcessor
 
 			if ((hr = IAudioRenderClient_GetBuffer(stream->renderClient, frames, &data)) != S_OK)
 				return LogHostError(hr);
-#else
+		#else
 			if (hr == AUDCLNT_E_BUFFER_TOO_LARGE)
 				return S_OK; // be silent in shared mode, try again next time
-#endif
+		#endif
 		}
 		else
 			return LogHostError(hr);
+	#else
+		if (hr == AUDCLNT_E_BUFFER_TOO_LARGE)
+			return S_OK; // try again next time
+
+		return LogHostError(hr);
+	#endif
 	}
 
 	// Process data
@@ -5348,6 +5521,9 @@ PA_THREAD_FUNC ProcThreadEvent(void *param)
 	BOOL bWaitAllEvents = FALSE;
 	BOOL bThreadComInitialized = FALSE;
 
+	// Notify: state
+	NotifyStateChanged(stream, paWasapiStreamStateThreadPrepare, ERROR_SUCCESS);
+
 	/*
 	If COM is already initialized CoInitialize will either return
 	FALSE, or RPC_E_CHANGED_MODE if it was initialized in a different
@@ -5460,6 +5636,9 @@ PA_THREAD_FUNC ProcThreadEvent(void *param)
 	// Notify: thread started
 	SetEvent(stream->hThreadStart);
 
+	// Notify: state
+	NotifyStateChanged(stream, paWasapiStreamStateThreadStart, ERROR_SUCCESS);
+
 	// Processing Loop
 	for (;;)
     {
@@ -5527,6 +5706,9 @@ thread_end:
 	// Notify: thread exited
 	SetEvent(stream->hThreadExit);
 
+	// Notify: state
+	NotifyStateChanged(stream, paWasapiStreamStateThreadStop, hr);
+
 	return 0;
 
 thread_error:
@@ -5549,11 +5731,14 @@ PA_THREAD_FUNC ProcThreadPoll(void *param)
 	ThreadIdleScheduler scheduler;
 
 	// Calculate the actual duration of the allocated buffer.
-	DWORD sleep_ms     = 0;
+	DWORD sleep_ms = 0;
 	DWORD sleep_ms_in;
 	DWORD sleep_ms_out;
 
 	BOOL bThreadComInitialized = FALSE;
+
+	// Notify: state
+	NotifyStateChanged(stream, paWasapiStreamStateThreadPrepare, ERROR_SUCCESS);
 
 	/*
 	If COM is already initialized CoInitialize will either return
@@ -5662,18 +5847,19 @@ PA_THREAD_FUNC ProcThreadPoll(void *param)
 				}
 				else
 				{
-					if (frames != 0)
-					{
-						// USB DACs report large buffer in Exclusive mode and if it is filled fully will stuck in
-						// non playing state, e.g. IAudioClient_GetCurrentPadding() will start reporting max buffer size
-						// constantly, thus preload data size equal to the user buffer to allow process going
-						if ((stream->out.shareMode == AUDCLNT_SHAREMODE_EXCLUSIVE) && (frames > stream->out.framesPerBuffer))
-							frames = stream->out.framesPerBuffer;
+					// Some devices may not start (will get stuck with 0 ready frames) if data not prefetched
+					if (frames == 0)
+						frames = stream->out.framesPerBuffer;
 
-						if ((hr = ProcessOutputBuffer(stream, processor, frames)) != S_OK)
-						{
-							LogHostError(hr); // not fatal, just log
-						}
+					// USB DACs report large buffer in Exclusive mode and if it is filled fully will stuck in
+					// non playing state, e.g. IAudioClient_GetCurrentPadding() will start reporting max buffer size
+					// constantly, thus preload data size equal to the user buffer to allow process going
+					if ((stream->out.shareMode == AUDCLNT_SHAREMODE_EXCLUSIVE) && (frames >= (stream->out.framesPerBuffer * 2)))
+						frames -= stream->out.framesPerBuffer;
+
+					if ((hr = ProcessOutputBuffer(stream, processor, frames)) != S_OK)
+					{
+						LogHostError(hr); // not fatal, just log
 					}
 				}
             }
@@ -5697,17 +5883,19 @@ PA_THREAD_FUNC ProcThreadPoll(void *param)
 	// Notify: thread started
 	SetEvent(stream->hThreadStart);
 
+	// Notify: state
+	NotifyStateChanged(stream, paWasapiStreamStateThreadStart, ERROR_SUCCESS);
+
 	if (!PA_WASAPI__IS_FULLDUPLEX(stream))
 	{
-		// Processing Loop
 		UINT32 next_sleep = sleep_ms;
+
+		// Processing Loop
 		while (WaitForSingleObject(stream->hCloseRequest, next_sleep) == WAIT_TIMEOUT)
 		{
 			// Get next sleep time
 			if (sleep_ms == 0)
-			{
 				next_sleep = ThreadIdleScheduler_NextSleep(&scheduler);
-			}
 
 			for (i = 0; i < S_COUNT; ++i)
 			{
@@ -5735,14 +5923,14 @@ PA_THREAD_FUNC ProcThreadPoll(void *param)
 					if (stream->renderClient == NULL)
 						break;
 
-					// get available frames
+					// Get available frames
 					if ((hr = _PollGetOutputFramesAvailable(stream, &frames)) != S_OK)
 					{
 						LogHostError(hr);
 						goto thread_error;
 					}
 
-					// output
+					// Output data to the user callback
 					if (stream->bufferMode == paUtilFixedHostBufferSize)
 					{
 						while (frames >= stream->out.framesPerBuffer)
@@ -5757,14 +5945,12 @@ PA_THREAD_FUNC ProcThreadPoll(void *param)
 						}
 					}
 					else
+					if (frames != 0)
 					{
-						if (frames != 0)
+						if ((hr = ProcessOutputBuffer(stream, processor, frames)) != S_OK)
 						{
-							if ((hr = ProcessOutputBuffer(stream, processor, frames)) != S_OK)
-							{
-								LogHostError(hr);
-								goto thread_error;
-							}
+							LogHostError(hr);
+							goto thread_error;
 						}
 					}
 
@@ -6051,6 +6237,9 @@ thread_end:
 
 	// Notify: thread exited
 	SetEvent(stream->hThreadExit);
+
+	// Notify: state
+	NotifyStateChanged(stream, paWasapiStreamStateThreadStop, hr);
 
 	return 0;
 
