@@ -2647,7 +2647,7 @@ static PaError CloseStream( PaStream* s )
 		
 		if( stream->inputUnit )
         {
-            Boolean isInput = FALSE;
+            Boolean isInput = TRUE;
             CleanupDevicePropertyListeners( stream, stream->inputDevice, isInput );
 		}
 		

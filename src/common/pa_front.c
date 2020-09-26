@@ -152,6 +152,7 @@ static void TerminateHostApis( void )
         hostApis_[hostApisCount_]->Terminate( hostApis_[hostApisCount_] );
     }
     hostApisCount_ = 0;
+    defaultHostApiIndex_ = 0;
     deviceCount_ = 0;
 
     if( hostApis_ != 0 )
@@ -200,11 +201,11 @@ static PaError InitializeHostApis( void )
             assert( hostApi->info.defaultInputDevice < hostApi->info.deviceCount );
             assert( hostApi->info.defaultOutputDevice < hostApi->info.deviceCount );
 
-            /* the first successfully initialized host API with at least one input *or*
+            /* the first successfully initialized host API with a default input *or*
                output device is used as the default host API.
             */
             if( (defaultHostApiIndex_ == -1) &&
-                    ( hostApi->info.defaultInputDevice != paNoDevice
+                    ( hostApi->info.defaultInputDevice != paNoDevice 
                         || hostApi->info.defaultOutputDevice != paNoDevice ) )
             {
                 defaultHostApiIndex_ = hostApisCount_;
