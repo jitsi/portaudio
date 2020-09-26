@@ -87,6 +87,15 @@ PaError PaWinUtil_CoInitialize( PaHostApiTypeId hostApiType, PaWinUtilComInitial
 */
 void PaWinUtil_CoUninitialize( PaHostApiTypeId hostApiType, PaWinUtilComInitializationResult *comInitializationResult );
 
+/**
+ @brief Gets the initialization state of the Microsoft COM subsystem.
+
+ @param comInitializationResult An input parameter. A pointer to a value previously
+ initialized by a call to PaWinUtil_CoInitialize.
+
+ @returns TRUE if COM was successfully initialized.
+*/
+BOOL PaWinUtil_CoIsInitialized( const PaWinUtilComInitializationResult *comInitializationResult );
 
 #ifdef __cplusplus
 }

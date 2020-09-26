@@ -1433,7 +1433,6 @@ static PaError ScanDeviceInfos( struct PaUtilHostApiRepresentation *hostApi, PaH
 {
     PaWinDsHostApiRepresentation *winDsHostApi = (PaWinDsHostApiRepresentation*)hostApi;
     PaWinDsDeviceInfo *deviceInfoArray;
-    char comWasInitialized = winDsHostApi->comWasInitialized;
     PaError result = paNoError;
     PaWinDsScanDeviceInfosResults *outArgument = 0;
     DSDeviceNamesAndGUIDs deviceNamesAndGUIDs;
@@ -1441,7 +1440,7 @@ static PaError ScanDeviceInfos( struct PaUtilHostApiRepresentation *hostApi, PaH
     int maximumNewDeviceCount = 0;
 
     /* Check preconditions */
-    if( !comWasInitialized || scanResults == NULL || newDeviceCount == NULL )
+    if( !PaWinUtil_CoIsInitialized(&winDsHostApi->comInitializationResult) || scanResults == NULL || newDeviceCount == NULL )
        return paInternalError;
 
     /* initialize the out params */
@@ -1465,7 +1464,7 @@ static PaError ScanDeviceInfos( struct PaUtilHostApiRepresentation *hostApi, PaH
 
     /* DSound - enumerate devices to count them and to gather their GUIDs and device names */
 
-    paWinDsDSoundEntryPoints.DirectSoundCaptureEnumerateW( (LPDSENUMCALLBACKA)CollectGUIDsProcW, (void *)&deviceNamesAndGUIDs.inputNamesAndGUIDs );
+    paWinDsDSoundEntryPoints.DirectSoundCaptureEnumerateW( (LPDSENUMCALLBACKW)CollectGUIDsProcW, (void *)&deviceNamesAndGUIDs.inputNamesAndGUIDs );
 
     if( deviceNamesAndGUIDs.inputNamesAndGUIDs.enumerationError != paNoError )
     {
@@ -1473,7 +1472,7 @@ static PaError ScanDeviceInfos( struct PaUtilHostApiRepresentation *hostApi, PaH
         goto error;
     }
 
-    paWinDsDSoundEntryPoints.DirectSoundEnumerateW( (LPDSENUMCALLBACKA)CollectGUIDsProcW, (void *)&deviceNamesAndGUIDs.outputNamesAndGUIDs );
+    paWinDsDSoundEntryPoints.DirectSoundEnumerateW( (LPDSENUMCALLBACKW)CollectGUIDsProcW, (void *)&deviceNamesAndGUIDs.outputNamesAndGUIDs );
 
     if( deviceNamesAndGUIDs.outputNamesAndGUIDs.enumerationError != paNoError )
     {
@@ -2676,8 +2675,8 @@ static int TimeSlice( PaWinDsStream *stream )
         framesToXfer = numOutFramesReady = bytesEmpty / stream->outputFrameSizeBytes;
 
         /* Check for underflow */
-		/* FIXME QueryOutputSpace should not adjust underflow count as a side effect.
-			A query function should be a const operator on the stream and return a flag on underflow. */
+        /* FIXME QueryOutputSpace should not adjust underflow count as a side effect.
+            A query function should be a const operator on the stream and return a flag on underflow. */
         if( stream->outputUnderflowCount != previousUnderflowCount )
             stream->callbackFlags |= paOutputUnderflow;
 

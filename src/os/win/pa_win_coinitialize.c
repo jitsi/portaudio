@@ -146,3 +146,8 @@ void PaWinUtil_CoUninitialize( PaHostApiTypeId hostApiType, PaWinUtilComInitiali
 		}
     }
 }
+
+BOOL PaWinUtil_CoIsInitialized( const PaWinUtilComInitializationResult *comInitializationResult )
+{
+    return comInitializationResult->state == PAWINUTIL_COM_INITIALIZED;
+}
