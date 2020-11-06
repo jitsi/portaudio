@@ -1550,6 +1550,8 @@ static PaError ScanDeviceInfos( struct PaUtilHostApiRepresentation *hostApi, PaH
             goto error;
         }
 
+        GetDefaultLatencies( &defaultLowLatency, &defaultHighLatency );
+
         for( i = 0 ; i < maximumPossibleDeviceCount; ++i )
         {
             PaWinMmeDeviceInfo *wmmeDeviceInfo = &deviceInfoArray[i];
@@ -1593,8 +1595,6 @@ static PaError ScanDeviceInfos( struct PaUtilHostApiRepresentation *hostApi, PaH
         }
         outArgument->inputDeviceCount = 0;
         outArgument->outputDeviceCount = 0;
-
-        GetDefaultLatencies( &defaultLowLatency, &defaultHighLatency );
 
         if( inputDeviceCount > 0 )
         {
