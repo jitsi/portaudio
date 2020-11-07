@@ -1809,7 +1809,7 @@ static void NotifyStateChanged(PaWasapiStream *stream, UINT32 flags, HRESULT hr)
 // ------------------------------------------------------------------------------------------
 static void FillBaseDeviceInfo(PaDeviceInfo *deviceInfo, PaHostApiIndex hostApiIndex)
 {
-    deviceInfo->structVersion = 2;
+    deviceInfo->structVersion = 3;
     deviceInfo->hostApi       = hostApiIndex;
 }
 
