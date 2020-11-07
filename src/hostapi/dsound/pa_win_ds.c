@@ -997,27 +997,28 @@ static PaError AddOutputDeviceInfoFromDirectSound(
     }
 
     /* Copy GUID to the device info structure. Set pointer. */
+    char * deviceUID = (char *)PaUtil_GroupAllocateMemory(allocations, 40);
+    memset(deviceUID, 0, 40);
     if( lpGUID == NULL )
     {
         winDsDeviceInfo->lpGUID = NULL;
+        (*deviceUID) = '0';
     }
     else
     {
         // target device UID property
         WCHAR duid[39];
-        char *deviceUID;
-        deviceUID = (char *)PaUtil_GroupAllocateMemory(allocations, 39);
 
         StringFromGUID2(&(*lpGUID), (LPOLESTR) &duid, 39);
-        wcstombs(deviceUID, duid, sizeof(deviceUID));
+        wcstombs(deviceUID, duid, 39);
         WideCharToMultiByte( CP_ACP, WC_COMPOSITECHECK | WC_DEFAULTCHAR,\
                     duid, -1, deviceUID, 39, NULL, NULL );
-        deviceInfo->deviceUID = deviceUID;
 
         memcpy( &winDsDeviceInfo->guid, lpGUID, sizeof(GUID) );
         winDsDeviceInfo->lpGUID = &winDsDeviceInfo->guid;
     }
 
+    deviceInfo->deviceUID = deviceUID;
     deviceInfo->name = name;
 
     return result;
@@ -1179,27 +1180,28 @@ static PaError AddInputDeviceInfoFromDirectSoundCapture(
 
 
     /* Copy GUID to the device info structure. Set pointer. */
+    char * deviceUID = (char *)PaUtil_GroupAllocateMemory(allocations, 40);
+    memset(deviceUID, 0, 40);
     if( lpGUID == NULL )
     {
         winDsDeviceInfo->lpGUID = NULL;
+        (*deviceUID) = '0';
     }
     else
     {
         // target device UID property
         WCHAR duid[39];
-        char *deviceUID;
-        deviceUID = (char *)PaUtil_GroupAllocateMemory(allocations, 39);
 
         StringFromGUID2(&(*lpGUID), (LPOLESTR) &duid, 39);
-        wcstombs(deviceUID, duid, sizeof(deviceUID));
+        wcstombs(deviceUID, duid, 39);
         WideCharToMultiByte( CP_ACP, WC_COMPOSITECHECK | WC_DEFAULTCHAR,\
                     duid, -1, deviceUID, 39, NULL, NULL );
-        deviceInfo->deviceUID = deviceUID;
 
-        winDsDeviceInfo->lpGUID = &winDsDeviceInfo->guid;
         memcpy( &winDsDeviceInfo->guid, lpGUID, sizeof(GUID) );
+        winDsDeviceInfo->lpGUID = &winDsDeviceInfo->guid;
     }
 
+    deviceInfo->deviceUID = deviceUID;
     deviceInfo->name = name;
 
     return result;
