@@ -14,12 +14,12 @@
 
 #include <setupapi.h>
 
-#include <stdio.h>
-
 #if (defined(WIN32) && (defined(_MSC_VER) && (_MSC_VER >= 1200))) /* MSC version 6 and above */
 #pragma comment( lib, "setupapi.lib" )
 #endif
 
+/* GUID KSCATEGORY_AUDIO */
+static const GUID pa_KSCATEGORY_AUDIO = { STATIC_KSCATEGORY_AUDIO };
 
 /* Implemented in pa_front.c 
   @param first  0 = unknown, 1 = insertion, 2 = removal
@@ -128,7 +128,7 @@ static void PopulateCacheWithAvailableAudioDevices(PaHotPlugDeviceEventHandlerIn
         devInterfaceDetails->cbSize = sizeof(SP_DEVICE_INTERFACE_DETAIL_DATA_W);
 
         /* Open a handle to search for devices (filters) */
-        handle = SetupDiGetClassDevsW(&KSCATEGORY_AUDIO,NULL,NULL,DIGCF_PRESENT | DIGCF_DEVICEINTERFACE);
+        handle = SetupDiGetClassDevsW(&pa_KSCATEGORY_AUDIO,NULL,NULL,DIGCF_PRESENT | DIGCF_DEVICEINTERFACE);
         if( handle != NULL )
         {
             int device;
@@ -145,7 +145,7 @@ static void PopulateCacheWithAvailableAudioDevices(PaHotPlugDeviceEventHandlerIn
                 devInfoData.cbSize = sizeof(SP_DEVINFO_DATA);
                 devInfoData.Reserved = 0;
 
-                noError = SetupDiEnumDeviceInterfaces(handle,NULL,&KSCATEGORY_AUDIO,device,&interfaceData);
+                noError = SetupDiEnumDeviceInterfaces(handle,NULL,&pa_KSCATEGORY_AUDIO,device,&interfaceData);
                 if( !noError )
                     break; /* No more devices */
 
@@ -179,7 +179,7 @@ static LRESULT CALLBACK PaMsgWinProcW(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
                 if (ptr->dbcc_devicetype != DBT_DEVTYP_DEVICEINTERFACE)
                     break;
 
-                if (!IsEqualGUID(&ptr->dbcc_classguid, &KSCATEGORY_AUDIO))
+                if (!IsEqualGUID(&ptr->dbcc_classguid, &pa_KSCATEGORY_AUDIO))
                     break;
 
                 if (IsDeviceAudio(ptr->dbcc_name))
@@ -198,7 +198,7 @@ static LRESULT CALLBACK PaMsgWinProcW(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
                 if (ptr->dbcc_devicetype != DBT_DEVTYP_DEVICEINTERFACE)
                     break;
 
-                if (!IsEqualGUID(&ptr->dbcc_classguid, &KSCATEGORY_AUDIO))
+                if (!IsEqualGUID(&ptr->dbcc_classguid, &pa_KSCATEGORY_AUDIO))
                     break;
 
                 if (RemoveDeviceFromCache(pInfo, ptr->dbcc_name))
@@ -237,8 +237,8 @@ PA_THREAD_FUNC PaRunMessageLoop(void* ptr)
 #endif
 
         pInfo->hNotify = RegisterDeviceNotificationW( 
-            pInfo->hWnd,                
-            &NotificationFilter,        
+            pInfo->hWnd,
+            &NotificationFilter,
             DEVICE_NOTIFY_WINDOW_HANDLE|DEVICE_NOTIFY_ALL_INTERFACE_CLASSES
             );
 
@@ -272,6 +272,7 @@ static PaHotPlugDeviceEventHandlerInfo* s_handler = 0;
 
 void PaUtil_InitializeHotPlug()
 {
+    PA_LOGAPI_ENTER( "PaUtil_InitializeHotPlug" );
     if (s_handler == 0)
     {
         s_handler = (PaHotPlugDeviceEventHandlerInfo*)PaUtil_AllocateMemory(sizeof(PaHotPlugDeviceEventHandlerInfo));
@@ -285,10 +286,12 @@ void PaUtil_InitializeHotPlug()
             assert(s_handler->hMsgThread != 0);
         }
     }
+    PA_LOGAPI_EXIT( "PaUtil_InitializeHotPlug" );
 }
 
 void PaUtil_TerminateHotPlug()
 {
+    PA_LOGAPI_ENTER( "PaUtil_TerminateHotPlug" );
     if (s_handler != 0)
     {
         if (s_handler->hWnd)
@@ -305,6 +308,7 @@ void PaUtil_TerminateHotPlug()
         PaUtil_FreeMemory( s_handler );
         s_handler = 0;
     }
+    PA_LOGAPI_EXIT( "PaUtil_TerminateHotPlug" );
 }
 
 void PaUtil_LockHotPlug()
