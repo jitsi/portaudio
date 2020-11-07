@@ -1093,6 +1093,10 @@ static int IgnorePlugin( const char *pluginId )
     static const char *ignoredPlugins[] = {"hw", "plughw", "plug", "dsnoop", "tee",
         "file", "null", "shm", "cards", "rate_convert", NULL};
     int i = 0;
+
+    if( getenv( "PA_ALSA_IGNORE_ALL_PLUGINS" ) && atoi( getenv( "PA_ALSA_IGNORE_ALL_PLUGINS") ) )
+        return 1;
+
     while( ignoredPlugins[i] )
     {
         if( !strcmp( pluginId, ignoredPlugins[i] ) )
@@ -1361,6 +1365,8 @@ static PaError BuildDeviceList( PaAlsaHostApiRepresentation *alsaApi, void** sca
                     paInsufficientMemory );
             snprintf( deviceName, len, "%s: %s (%s)", cardName, infoName, buf );
 
+            PA_DEBUG(( "%s: Found device [%d]: %s\n", __FUNCTION__, numDeviceNames, deviceName ));
+
             ++numDeviceNames;
             if( !hwDevInfos || numDeviceNames > maxDeviceNames )
             {
@@ -1491,7 +1497,7 @@ static PaError BuildDeviceList( PaAlsaHostApiRepresentation *alsaApi, void** sca
 
         PA_ENSURE( FillInDevInfo( alsaApi, hwInfo, blocking, devInfo, &devIdx, out ) );
     }
-    assert( devIdx < numDeviceNames );
+    assert( devIdx <= numDeviceNames );
     /* Now inspect 'dmix' and 'default' plugins */
     for( i = 0; i < numDeviceNames; ++i )
     {
