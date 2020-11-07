@@ -1860,6 +1860,17 @@ static PaError FillDeviceInfo(PaWasapiHostApiRepresentation *paWasapi, void *pEn
 
         wcsncpy(wasapiDeviceInfo->deviceId, deviceId, PA_WASAPI_DEVICE_ID_LEN - 1);
         CoTaskMemFree(deviceId);
+
+        if ((deviceInfo->deviceUID = (char *)PaUtil_GroupAllocateMemory(paWasapi->allocations, PA_WASAPI_DEVICE_ID_LEN)) == NULL)
+        {
+            result = paInsufficientMemory;
+            goto error;
+        }
+        ((char *)deviceInfo->deviceUID)[0] = 0;
+        if (wasapiDeviceInfo->deviceId[0] != 0)
+            WideCharToMultiByte(CP_UTF8, 0, wasapiDeviceInfo->deviceId, (INT32)wcslen(wasapiDeviceInfo->deviceId), (char *)deviceInfo->deviceUID, PA_WASAPI_DEVICE_ID_LEN - 1, 0, 0);
+        if (deviceInfo->deviceUID[0] == 0) // fallback if WideCharToMultiByte is failed, or listEntry is id-less
+            _snprintf((char *)deviceInfo->deviceUID, PA_WASAPI_DEVICE_ID_LEN - 1, "WASAPI_baddev:%d", index);
     }
 
     // Get state of the device
@@ -1949,6 +1960,16 @@ static PaError FillDeviceInfo(PaWasapiHostApiRepresentation *paWasapi, void *pEn
 #else
     // Set device Id
     wcsncpy(wasapiDeviceInfo->deviceId, listEntry->info->id, PA_WASAPI_DEVICE_ID_LEN - 1);
+    if ((deviceInfo->deviceUID = (char *)PaUtil_GroupAllocateMemory(paWasapi->allocations, PA_WASAPI_DEVICE_ID_LEN)) == NULL)
+    {
+        result = paInsufficientMemory;
+        goto error;
+    }
+    ((char *)deviceInfo->deviceUID)[0] = 0;
+    if (listEntry->info->id[0] != 0)
+        WideCharToMultiByte(CP_UTF8, 0, listEntry->info->id, (INT32)wcslen(listEntry->info->id), (char *)deviceInfo->deviceUID, PA_WASAPI_DEVICE_ID_LEN - 1, 0, 0);
+    if (deviceInfo->deviceUID[0] == 0) // fallback if WideCharToMultiByte is failed, or listEntry is id-less
+        _snprintf((char *)deviceInfo->deviceUID, PA_WASAPI_DEVICE_ID_LEN - 1, "WASAPI_%s:%d", (listEntry->flow == eRender ? "Output" : "Input"), index);
 
     // Set device name
     if ((deviceInfo->name = (char *)PaUtil_GroupAllocateMemory(paWasapi->allocations, PA_WASAPI_DEVICE_NAME_LEN)) == NULL)
