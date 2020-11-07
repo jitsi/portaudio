@@ -918,7 +918,7 @@ static PaError InitializeInputDeviceInfo( PaWinMmeHostApiRepresentation *winMmeH
 
         if (mmr == MMSYSERR_NOERROR)
         {
-            deviceUID = (char *)PaUtil_GroupAllocateMemory(winMmeHostApi->allocations, wcslen(pstrEndpointId));
+            deviceUID = (char *)PaUtil_GroupAllocateMemory(winMmeHostApi->allocations, wcslen(pstrEndpointId) + 1);
             if( !deviceUID )
             {
                 result = paInsufficientMemory;
