@@ -1807,49 +1807,6 @@ static void NotifyStateChanged(PaWasapiStream *stream, UINT32 flags, HRESULT hr)
 }
 
 // ------------------------------------------------------------------------------------------
-static PaError ScanDeviceInfos( struct PaUtilHostApiRepresentation *hostApi, PaHostApiIndex hostApiIndex, void **scanResults, int *newDeviceCount )
-{
-    PaError scanError = paNoError;
-    PaWasapiHostApiRepresentation *paWasapi = (PaWasapiHostApiRepresentation *)hostApi;
-    *scanResults = NULL;
-    *newDeviceCount = 0;
-
-    // create a dummy host api where the default device scan can write its results
-    PaWasapiHostApiRepresentation *paWasapiDummy = PaUtil_GroupAllocateMemory(paWasapi->allocations, sizeof(PaWasapiHostApiRepresentation));
-    if (!paWasapiDummy)
-    {
-        scanError = paInsufficientMemory;
-        goto error;
-    }
-
-    memcpy(paWasapiDummy, paWasapi, sizeof(PaWasapiHostApiRepresentation));
-    paWasapiDummy->deviceCount = 0;
-    paWasapiDummy->devInfo = NULL;
-    memset(paWasapiDummy->defaultCapturer, 0, sizeof(paWasapiDummy->defaultCapturer));
-    memset(paWasapiDummy->defaultRenderer, 0, sizeof(paWasapiDummy->defaultRenderer));
-
-    PaUtilHostApiRepresentation *hostApiDummy = &paWasapiDummy->inheritedHostApiRep;
-    hostApiDummy->info.deviceCount = 0;
-    hostApiDummy->info.defaultInputDevice = paNoDevice;
-    hostApiDummy->info.defaultOutputDevice = paNoDevice;
-    hostApiDummy->deviceInfos = NULL;
-
-    scanError = CreateDeviceList(paWasapiDummy, hostApiIndex);
-    if (scanError == paNoError)
-    {
-        *scanResults = paWasapiDummy;
-        *newDeviceCount = hostApiDummy->info.deviceCount;
-        return paNoError;
-    }
-
-error:
-    if (scanError == paNoError)
-        scanError = paInternalError;
-
-    DisposeDeviceInfos(hostApi, paWasapiDummy, 0);
-    return scanError;
-}
-
 static void FillBaseDeviceInfo(PaDeviceInfo *deviceInfo, PaHostApiIndex hostApiIndex)
 {
     deviceInfo->structVersion = 2;
@@ -2499,90 +2456,6 @@ static PaWasapiHostApiRepresentation *_GetHostApi(PaError *ret)
     }
 
     return (PaWasapiHostApiRepresentation *)pApi;
-}
-
-// ------------------------------------------------------------------------------------------
-static PaError CommitDeviceInfos( struct PaUtilHostApiRepresentation *hostApi, PaHostApiIndex index, void *scanResults, int deviceCount )
-{
-    PaWasapiHostApiRepresentation *paWasapi = (PaWasapiHostApiRepresentation*)hostApi;
-
-    // Make sure initialized properly
-    if (paWasapi->allocations == NULL)
-        return paNotInitialized;
-
-    if (!scanResults)
-        return paInternalError;
-
-    PaWasapiHostApiRepresentation *paWasapiDummy = (PaWasapiHostApiRepresentation*)scanResults;
-    PaUtilHostApiRepresentation *hostApiDummy = &paWasapiDummy->inheritedHostApiRep;
-
-    // Release WASAPI internal device info list
-    ReleaseWasapiDeviceInfoList(paWasapi);
-
-    // Release external device info list
-    if (hostApi->deviceInfos != NULL)
-    {
-        for (int i = 0; i < hostApi->info.deviceCount; ++i)
-        {
-            PaUtil_GroupFreeMemory(paWasapi->allocations, (void *)hostApi->deviceInfos[i]->name);
-        }
-        PaUtil_GroupFreeMemory(paWasapi->allocations, hostApi->deviceInfos[0]);
-        PaUtil_GroupFreeMemory(paWasapi->allocations, hostApi->deviceInfos);
-
-        // Be ready for a device list reinitialization and if its creation is failed pointers must not be dangling
-        hostApi->deviceInfos = NULL;
-        hostApi->info.deviceCount = 0;
-        hostApi->info.defaultInputDevice = paNoDevice;
-        hostApi->info.defaultOutputDevice = paNoDevice;
-    }
-
-    // Apply scanResults to WASAPI
-    paWasapi->deviceCount = paWasapiDummy->deviceCount;
-    paWasapi->devInfo = paWasapiDummy->devInfo;
-    memcpy(paWasapi->defaultCapturer, paWasapiDummy->defaultCapturer, sizeof(paWasapi->defaultCapturer));
-    memcpy(paWasapi->defaultRenderer, paWasapiDummy->defaultRenderer, sizeof(paWasapi->defaultRenderer));
-    hostApi->deviceInfos = hostApiDummy->deviceInfos;
-    hostApi->info.deviceCount = hostApiDummy->info.deviceCount;
-    hostApi->info.defaultInputDevice = hostApiDummy->info.defaultInputDevice;
-    hostApi->info.defaultOutputDevice = hostApiDummy->info.defaultOutputDevice;
-
-    PaUtil_GroupFreeMemory(paWasapi->allocations, paWasapiDummy);
-    return paNoError;
-}
-
-// ------------------------------------------------------------------------------------------
-static PaError DisposeDeviceInfos( struct PaUtilHostApiRepresentation *hostApi, void *scanResults, int deviceCount )
-{
-    PaWasapiHostApiRepresentation *paWasapi = (PaWasapiHostApiRepresentation*)hostApi;
-
-    // Make sure initialized properly
-    if (paWasapi->allocations == NULL)
-        return paNotInitialized;
-
-    if (!scanResults)
-        return paNoError;
-
-    PaWasapiHostApiRepresentation *paWasapiDummy = (PaWasapiHostApiRepresentation*)scanResults;
-
-    // Release scanResults WASAPI internal device info list
-    ReleaseWasapiDeviceInfoList(paWasapiDummy);
-
-    // Release scanResults external device info list
-    PaUtilHostApiRepresentation *hostApiDummy = &paWasapiDummy->inheritedHostApiRep;
-    if (hostApiDummy->deviceInfos != NULL)
-    {
-        for (int i = 0; i < hostApiDummy->info.deviceCount; ++i)
-        {
-            PaUtil_GroupFreeMemory(paWasapi->allocations, (void *)hostApiDummy->deviceInfos[i]->name);
-        }
-        PaUtil_GroupFreeMemory(paWasapi->allocations, hostApiDummy->deviceInfos[0]);
-        PaUtil_GroupFreeMemory(paWasapi->allocations, hostApiDummy->deviceInfos);
-    }
-
-    // Release scanResults
-    PaUtil_GroupFreeMemory(paWasapi->allocations, paWasapiDummy);
-
-    return paNoError;
 }
 
 // ------------------------------------------------------------------------------------------
@@ -6664,4 +6537,128 @@ void *PaWasapi_ReallocateMemory(void *prev, size_t size)
 void PaWasapi_FreeMemory(void *ptr)
 {
     free(ptr);
+}
+
+// ------------------------------------------------------------------------------------------
+static PaError ScanDeviceInfos( struct PaUtilHostApiRepresentation *hostApi, PaHostApiIndex hostApiIndex, void **scanResults, int *newDeviceCount )
+{
+    PaError scanError = paNoError;
+    PaWasapiHostApiRepresentation *paWasapi = (PaWasapiHostApiRepresentation *)hostApi;
+    *scanResults = NULL;
+    *newDeviceCount = 0;
+
+    // create a dummy host api where the default device scan can write its results
+    PaWasapiHostApiRepresentation *paWasapiDummy = PaUtil_GroupAllocateMemory(paWasapi->allocations, sizeof(PaWasapiHostApiRepresentation));
+    if (!paWasapiDummy)
+    {
+        scanError = paInsufficientMemory;
+        goto error;
+    }
+
+    memcpy(paWasapiDummy, paWasapi, sizeof(PaWasapiHostApiRepresentation));
+    paWasapiDummy->deviceCount = 0;
+    paWasapiDummy->devInfo = NULL;
+
+    PaUtilHostApiRepresentation *hostApiDummy = &paWasapiDummy->inheritedHostApiRep;
+    hostApiDummy->info.deviceCount = 0;
+    hostApiDummy->info.defaultInputDevice = paNoDevice;
+    hostApiDummy->info.defaultOutputDevice = paNoDevice;
+    hostApiDummy->deviceInfos = NULL;
+
+    scanError = CreateDeviceList(paWasapiDummy, hostApiIndex);
+    if (scanError == paNoError)
+    {
+        *scanResults = paWasapiDummy;
+        *newDeviceCount = hostApiDummy->info.deviceCount;
+        return paNoError;
+    }
+
+    error:
+    if (scanError == paNoError)
+        scanError = paInternalError;
+
+    DisposeDeviceInfos(hostApi, paWasapiDummy, 0);
+    return scanError;
+}
+
+// ------------------------------------------------------------------------------------------
+static PaError CommitDeviceInfos( struct PaUtilHostApiRepresentation *hostApi, PaHostApiIndex index, void *scanResults, int deviceCount )
+{
+    PaWasapiHostApiRepresentation *paWasapi = (PaWasapiHostApiRepresentation*)hostApi;
+
+    // Make sure initialized properly
+    if (paWasapi->allocations == NULL)
+        return paNotInitialized;
+
+    if (!scanResults)
+        return paInternalError;
+
+    PaWasapiHostApiRepresentation *paWasapiDummy = (PaWasapiHostApiRepresentation*)scanResults;
+    PaUtilHostApiRepresentation *hostApiDummy = &paWasapiDummy->inheritedHostApiRep;
+
+    // Release WASAPI internal device info list
+    ReleaseWasapiDeviceInfoList(paWasapi);
+
+    // Release external device info list
+    if (hostApi->deviceInfos != NULL)
+    {
+        for (int i = 0; i < hostApi->info.deviceCount; ++i)
+        {
+            PaUtil_GroupFreeMemory(paWasapi->allocations, (void *)hostApi->deviceInfos[i]->name);
+        }
+        PaUtil_GroupFreeMemory(paWasapi->allocations, hostApi->deviceInfos[0]);
+        PaUtil_GroupFreeMemory(paWasapi->allocations, hostApi->deviceInfos);
+
+        // Be ready for a device list reinitialization and if its creation is failed pointers must not be dangling
+        hostApi->deviceInfos = NULL;
+        hostApi->info.deviceCount = 0;
+        hostApi->info.defaultInputDevice = paNoDevice;
+        hostApi->info.defaultOutputDevice = paNoDevice;
+    }
+
+    // Apply scanResults to WASAPI
+    paWasapi->deviceCount = paWasapiDummy->deviceCount;
+    paWasapi->devInfo = paWasapiDummy->devInfo;
+    hostApi->deviceInfos = hostApiDummy->deviceInfos;
+    hostApi->info.deviceCount = hostApiDummy->info.deviceCount;
+    hostApi->info.defaultInputDevice = hostApiDummy->info.defaultInputDevice;
+    hostApi->info.defaultOutputDevice = hostApiDummy->info.defaultOutputDevice;
+
+    PaUtil_GroupFreeMemory(paWasapi->allocations, paWasapiDummy);
+    return paNoError;
+}
+
+// ------------------------------------------------------------------------------------------
+static PaError DisposeDeviceInfos( struct PaUtilHostApiRepresentation *hostApi, void *scanResults, int deviceCount )
+{
+    PaWasapiHostApiRepresentation *paWasapi = (PaWasapiHostApiRepresentation*)hostApi;
+
+    // Make sure initialized properly
+    if (paWasapi->allocations == NULL)
+        return paNotInitialized;
+
+    if (!scanResults)
+        return paNoError;
+
+    PaWasapiHostApiRepresentation *paWasapiDummy = (PaWasapiHostApiRepresentation*)scanResults;
+
+    // Release scanResults WASAPI internal device info list
+    ReleaseWasapiDeviceInfoList(paWasapiDummy);
+
+    // Release scanResults external device info list
+    PaUtilHostApiRepresentation *hostApiDummy = &paWasapiDummy->inheritedHostApiRep;
+    if (hostApiDummy->deviceInfos != NULL)
+    {
+        for (int i = 0; i < hostApiDummy->info.deviceCount; ++i)
+        {
+            PaUtil_GroupFreeMemory(paWasapi->allocations, (void *)hostApiDummy->deviceInfos[i]->name);
+        }
+        PaUtil_GroupFreeMemory(paWasapi->allocations, hostApiDummy->deviceInfos[0]);
+        PaUtil_GroupFreeMemory(paWasapi->allocations, hostApiDummy->deviceInfos);
+    }
+
+    // Release scanResults
+    PaUtil_GroupFreeMemory(paWasapi->allocations, paWasapiDummy);
+
+    return paNoError;
 }
