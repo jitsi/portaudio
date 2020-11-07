@@ -1,6 +1,5 @@
 #include <stdio.h>
 #include <assert.h>
-#include <unistd.h>
 
 #include "portaudio.h"
 
@@ -15,7 +14,8 @@ void printDevices()
 
         assert( deviceInfo != 0 );
 
-        printf( "%d %s (%s)\n", i, deviceInfo->name, hostApiInfo->name );
+        printf( "%2d %s: %s, %s\n", i, hostApiInfo->name, deviceInfo->name, deviceInfo->deviceUID );
+        fflush(stdout);
     }
 }
 
@@ -24,6 +24,7 @@ static void devicesChangedCallback(void* p)
     (void)p;
 
     printf( "Portaudio device list have changed!\n" );
+    fflush(stdout);
 }
 
 int main(int argc, char* argv[])
@@ -36,6 +37,7 @@ int main(int argc, char* argv[])
         printDevices();
         
         printf( "press [enter] to update the device list. or q + [enter] to quit.\n" );
+        fflush(stdout);
         char ch = getchar();
         if( ch == 'q' )
             break;
