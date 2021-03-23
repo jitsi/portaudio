@@ -1185,7 +1185,8 @@ static OSStatus AudioDevicePropertyActualSampleRateListenerProc( AudioDeviceID i
     }
     return osErr;
 }
-#endif
+#endif /* PA_NEW_HAL */
+
 /* ================================================================================= */
 static OSStatus QueryUInt32DeviceProperty( AudioDeviceID deviceID, Boolean isInput, AudioDevicePropertyID propertyID, UInt32 *outValue )
 {
@@ -1271,7 +1272,7 @@ static OSStatus AudioDevicePropertyGenericListenerProc( AudioDeviceID inDevice, 
     }
     return osErr;
 }
-#endif
+#endif /* PA_NEW_HAL */
 
 /* ================================================================================= */
 /*
@@ -2346,7 +2347,7 @@ static OSStatus ringBufferIOProc( AudioConverterRef inAudioConverter,
 
    return noErr;
 }
-#endif
+#endif /* PA_NEW_HAL */
 
 /*
  * Called by the AudioUnit API to process audio from the sound card.
@@ -2588,7 +2589,7 @@ static OSStatus AudioIOProc( void *inRefCon,
                              &stream->inputRingBuffer,
                              &size,
                              (void *)&data );
-#endif
+#endif /* PA_NEW_HAL */
                if( err == RING_BUFFER_EMPTY )
                { /* the ring buffer callback underflowed */
                   err = 0;
@@ -2788,7 +2789,7 @@ static OSStatus AudioIOProc( void *inRefCon,
                           &stream->inputRingBuffer,
                           &size,
                           (void *)data );
-#endif
+#endif /* PA_NEW_HAL */
             if( err != RING_BUFFER_EMPTY )
                ERR( err );
             if( err != noErr && err != RING_BUFFER_EMPTY )
