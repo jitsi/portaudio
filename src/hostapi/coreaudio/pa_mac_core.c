@@ -2771,7 +2771,7 @@ static PaError CloseStream( PaStream* s )
                                                 0,
                                                 false,
                                                 kAudioDeviceProcessorOverload,
-                                                xrunCallback, NULL ); //todo: do we need to pass actual node?
+                                                xrunCallback, NULL ); //no need to pass actual node
        }
        if( stream->inputUnit && stream->outputUnit != stream->inputUnit ) {
           int count = removeFromXRunListenerList( stream );
@@ -2780,7 +2780,7 @@ static PaError CloseStream( PaStream* s )
                                                 0,
                                                 true,
                                                 kAudioDeviceProcessorOverload,
-                                                xrunCallback, NULL ); //todo: do we need to pass actual node?
+                                                xrunCallback, NULL ); //no need to pass actual node
        }
        if( stream->outputUnit && stream->outputUnit != stream->inputUnit ) {
           AudioUnitUninitialize( stream->outputUnit );
