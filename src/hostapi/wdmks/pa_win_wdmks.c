@@ -167,7 +167,7 @@ Default is to use the pin category.
 #define DYNAMIC_GUID(data) {data}
 #define _NTRTL_ /* Turn off default definition of DEFINE_GUIDEX */
 #undef DEFINE_GUID
-#ifdef __clang__ /* clang-cl: avoid too many arguments error */
+#if defined(__clang__) || (defined(_MSVC_TRADITIONAL) && !_MSVC_TRADITIONAL) /* clang-cl and new msvc preprocessor: avoid too many arguments error */
   #define DEFINE_GUID(n, ...) EXTERN_C const GUID n = {__VA_ARGS__}
   #define DEFINE_GUID_THUNK(n, ...) DEFINE_GUID(n, __VA_ARGS__)
   #define DEFINE_GUIDEX(n) DEFINE_GUID_THUNK(n, STATIC_##n)
@@ -175,7 +175,7 @@ Default is to use the pin category.
   #define DEFINE_GUID(n, data) EXTERN_C const GUID n = {data}
   #define DEFINE_GUID_THUNK(n, data) DEFINE_GUID(n, data)
   #define DEFINE_GUIDEX(n) DEFINE_GUID_THUNK(n, STATIC_##n)
-#endif /* __clang__ */
+#endif /* __clang__, !_MSVC_TRADITIONAL */
 #endif
 
 #include <setupapi.h>
@@ -657,7 +657,7 @@ static BOOL IsEarlierThanVista()
 NOTE: GetVersionEx() is deprecated as of Windows 8.1 and can not be used to reliably detect
 versions of Windows higher than Windows 8 (due to manifest requirements for reporting higher versions).
 Microsoft recommends switching to VerifyVersionInfo (available on Win 2k and later), however GetVersionEx
-is is faster, for now we just disable the deprecation warning.
+is faster, for now we just disable the deprecation warning.
 See: https://msdn.microsoft.com/en-us/library/windows/desktop/ms724451(v=vs.85).aspx
 See: http://www.codeproject.com/Articles/678606/Part-Overcoming-Windows-s-deprecation-of-GetVe
 */
