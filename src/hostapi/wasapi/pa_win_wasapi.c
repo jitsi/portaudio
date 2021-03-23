@@ -87,6 +87,10 @@
     #include <mmdeviceapi.h>
     #include <devicetopology.h>    // Used to get IKsJackDescription interface
     #undef INITGUID
+// Visual Studio 2010 does not support the inline keyword
+#if (_MSC_VER <= 1600)
+    #define inline _inline
+#endif
 #endif
 #ifndef __MWERKS__
     #include <malloc.h>
@@ -2104,6 +2108,7 @@ static PaDeviceInfo *AllocateDeviceListMemory(PaWasapiHostApiRepresentation *paW
 
     if (paWasapi->deviceCount != 0)
     {
+        UINT32 i;
         UINT32 deviceCount = paWasapi->deviceCount;
     #if defined(PA_WASAPI_MAX_CONST_DEVICE_COUNT) && (PA_WASAPI_MAX_CONST_DEVICE_COUNT > 0)
         if (deviceCount < PA_WASAPI_MAX_CONST_DEVICE_COUNT)
@@ -2115,7 +2120,7 @@ static PaDeviceInfo *AllocateDeviceListMemory(PaWasapiHostApiRepresentation *paW
         {
             return NULL;
         }
-        for (UINT32 i = 0; i < deviceCount; ++i)
+        for (i = 0; i < deviceCount; ++i)
             hostApi->deviceInfos[i] = NULL;
 
         // Allocate all device info structs in a contiguous block
@@ -3180,7 +3185,7 @@ static PaUint32 _GetFramesPerHostBuffer(PaUint32 userFramesPerBuffer, PaTime sug
 }
 
 // ------------------------------------------------------------------------------------------
-static void _RecalculateBuffersCount(PaWasapiSubStream *sub, UINT32 userFramesPerBuffer, UINT32 framesPerLatency, 
+static void _RecalculateBuffersCount(PaWasapiSubStream *sub, UINT32 userFramesPerBuffer, UINT32 framesPerLatency,
     BOOL fullDuplex, BOOL output)
 {
     // Count buffers (must be at least 1)
@@ -3201,9 +3206,9 @@ static void _RecalculateBuffersCount(PaWasapiSubStream *sub, UINT32 userFramesPe
         if (eventMode)
             sub->userBufferAndHostMatch = 1;
 
-        // Full-duplex or Event mode: prefer paUtilBoundedHostBufferSize because exclusive mode will starve 
+        // Full-duplex or Event mode: prefer paUtilBoundedHostBufferSize because exclusive mode will starve
         // and produce glitchy audio
-        // Output Polling mode: prefer paUtilFixedHostBufferSize (buffers != 1) for polling mode is it allows 
+        // Output Polling mode: prefer paUtilFixedHostBufferSize (buffers != 1) for polling mode is it allows
         // to consume user data by fixed size data chunks and thus lowers memory movement (less CPU usage)
         if (fullDuplex || eventMode || !output)
             sub->buffers = 1;
@@ -6120,6 +6125,7 @@ static inline INT32 GetNextSleepTime(SystemTimer *timer, ThreadIdleScheduler *sc
     UINT32 sleepTime)
 {
     INT32 nextSleepTime;
+    INT32 procTime;
 
     // Get next sleep time
     if (sleepTime == 0)
@@ -6133,7 +6139,7 @@ static inline INT32 GetNextSleepTime(SystemTimer *timer, ThreadIdleScheduler *sc
     //
     // [9],{2},[8],{1},[9],{1},[9],{3},[7],{2},[8],{3},[7],{2},[8],{2},[8],{3},[7],{2},[8],...
     //
-    INT32 procTime = (INT32)(SystemTimer_GetTime(timer) - startTime);
+    procTime = (INT32)(SystemTimer_GetTime(timer) - startTime);
     nextSleepTime -= procTime;
     if (nextSleepTime < timer->granularity)
         nextSleepTime = 0;
