@@ -417,16 +417,6 @@ static char *DuplicateDeviceNameString( PaUtilAllocationGroup *allocations, cons
     
     if( src != NULL )
     {
-#if !defined(_UNICODE) && !defined(UNICODE)
-        size_t len = WideCharToMultiByte(CP_ACP, 0, src, -1, NULL, 0, NULL, NULL);
-
-        result = (char*)PaUtil_GroupAllocateMemory( allocations, (long)(len + 1) );
-        if( result ) {
-            if (WideCharToMultiByte(CP_ACP, 0, src, -1, result, (int)len, NULL, NULL) == 0) {
-                result = 0;
-            }
-        }
-#else
         size_t len = WideCharToMultiByte(CP_UTF8, 0, src, -1, NULL, 0, NULL, NULL);
 
         result = (char*)PaUtil_GroupAllocateMemory( allocations, (long)(len + 1) );
@@ -435,7 +425,6 @@ static char *DuplicateDeviceNameString( PaUtilAllocationGroup *allocations, cons
                 result = 0;
             }
         }
-#endif
     }
     else
     {

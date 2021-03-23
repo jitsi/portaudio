@@ -208,12 +208,9 @@ static const char constOutputMapperSuffix_[] = " - Output";
 
 /********************************************************************/
 
-/* Copy null-terminated TCHAR string to explicit char string using UTF8 encoding */
-static char *CopyTCharStringToUtf8CString(char *destination, size_t destLengthBytes, const TCHAR *source)
+/* Copy null-terminated WCHAR string to explicit char string using UTF8 encoding */
+static char *CopyWCharStringToUtf8CString(char *destination, size_t destLengthBytes, const WCHAR *source)
 {
-#if !defined(_UNICODE) && !defined(UNICODE)
-    return strcpy(destination, source);
-#else
     /* The cbMultiByte parameter ["destLengthBytes" below] is:
     """
     Size, in bytes, of the buffer indicated by lpMultiByteStr ["destination" below]. 
@@ -241,18 +238,13 @@ static char *CopyTCharStringToUtf8CString(char *destination, size_t destLengthBy
     if (WideCharToMultiByte(CP_UTF8, 0, source, -1, destination, /*cbMultiByte=*/intDestLengthBytes, NULL, NULL) == 0)
         return NULL;
     return destination;
-#endif
 }
 
 /* returns required length (in bytes) of destination buffer when 
-   converting TCHAR string to UTF8 bytes, not including the terminating null. */
-static size_t TCharStringLen(const TCHAR *str)
+   converting WCHAR string to UTF8 bytes, not including the terminating null. */
+static size_t WCharStringLen(const WCHAR *str)
 {
-#if !defined(_UNICODE) && !defined(UNICODE)
-    return strlen(str);
-#else
-    return WideCharToMultiByte(CP_UTF8, 0, str, -1, NULL, 0, NULL, NULL);	
-#endif
+    return WideCharToMultiByte(CP_UTF8, 0, str, -1, NULL, 0, NULL, NULL);
 }
 
 /********************************************************************/
@@ -305,14 +297,12 @@ static signed long GetStreamWriteAvailable( PaStream* stream );
 
 /* macros for setting last host error information */
 
-#ifdef UNICODE
-
 #define PA_MME_SET_LAST_WAVEIN_ERROR( mmresult ) \
     {                                                                   \
         wchar_t mmeErrorTextWide[ MAXERRORLENGTH ];                     \
         char mmeErrorText[ MAXERRORLENGTH ];                            \
-        waveInGetErrorText( mmresult, mmeErrorTextWide, MAXERRORLENGTH );   \
-        WideCharToMultiByte( CP_ACP, WC_COMPOSITECHECK | WC_DEFAULTCHAR,\
+        waveInGetErrorTextW( mmresult, mmeErrorTextWide, MAXERRORLENGTH );   \
+        WideCharToMultiByte( CP_UTF8, WC_COMPOSITECHECK | WC_DEFAULTCHAR,\
             mmeErrorTextWide, -1, mmeErrorText, MAXERRORLENGTH, NULL, NULL );  \
         PaUtil_SetLastHostErrorInfo( paMME, mmresult, mmeErrorText );   \
     }
@@ -321,29 +311,11 @@ static signed long GetStreamWriteAvailable( PaStream* stream );
     {                                                                   \
         wchar_t mmeErrorTextWide[ MAXERRORLENGTH ];                     \
         char mmeErrorText[ MAXERRORLENGTH ];                            \
-        waveOutGetErrorText( mmresult, mmeErrorTextWide, MAXERRORLENGTH );  \
-        WideCharToMultiByte( CP_ACP, WC_COMPOSITECHECK | WC_DEFAULTCHAR,\
+        waveOutGetErrorTextW( mmresult, mmeErrorTextWide, MAXERRORLENGTH );  \
+        WideCharToMultiByte( CP_UTF8, WC_COMPOSITECHECK | WC_DEFAULTCHAR,\
             mmeErrorTextWide, -1, mmeErrorText, MAXERRORLENGTH, NULL, NULL );  \
         PaUtil_SetLastHostErrorInfo( paMME, mmresult, mmeErrorText );   \
     }
-    
-#else /* !UNICODE */
-
-#define PA_MME_SET_LAST_WAVEIN_ERROR( mmresult ) \
-    {                                                                   \
-        char mmeErrorText[ MAXERRORLENGTH ];                            \
-        waveInGetErrorText( mmresult, mmeErrorText, MAXERRORLENGTH );   \
-        PaUtil_SetLastHostErrorInfo( paMME, mmresult, mmeErrorText );   \
-    }
-
-#define PA_MME_SET_LAST_WAVEOUT_ERROR( mmresult ) \
-    {                                                                   \
-        char mmeErrorText[ MAXERRORLENGTH ];                            \
-        waveOutGetErrorText( mmresult, mmeErrorText, MAXERRORLENGTH );  \
-        PaUtil_SetLastHostErrorInfo( paMME, mmresult, mmeErrorText );   \
-    }
-
-#endif /* UNICODE */
 
 
 static void PaMme_SetLastSystemError( DWORD errorCode )
@@ -811,7 +783,7 @@ static PaError InitializeInputDeviceInfo( PaWinMmeHostApiRepresentation *winMmeH
     char *deviceName; /* non-const ptr */
     char *deviceUID;
     MMRESULT mmresult;
-    WAVEINCAPS wic;
+    WAVEINCAPSW wic;
     PaDeviceInfo *deviceInfo = &winMmeDeviceInfo->inheritedDeviceInfo;
     size_t len;
     
@@ -823,7 +795,7 @@ static PaError InitializeInputDeviceInfo( PaWinMmeHostApiRepresentation *winMmeH
     if (WAVE_MAPPER == winMmeInputDeviceId)
         return paNoError;
 
-    mmresult = waveInGetDevCaps( winMmeInputDeviceId, &wic, sizeof( WAVEINCAPS ) );
+    mmresult = waveInGetDevCapsW( winMmeInputDeviceId, &wic, sizeof( WAVEINCAPSW ) );
     if( mmresult == MMSYSERR_NOMEM )
     {
         result = paInsufficientMemory;
@@ -843,7 +815,7 @@ static PaError InitializeInputDeviceInfo( PaWinMmeHostApiRepresentation *winMmeH
         so we are limited to displaying only the first 31 characters of the device name. */
     if( winMmeInputDeviceId == WAVE_MAPPER )
     {
-        len = TCharStringLen( wic.szPname ) + 1 + sizeof(constInputMapperSuffix_);
+        len = WCharStringLen( wic.szPname ) + 1 + sizeof(constInputMapperSuffix_);
         /* Append I/O suffix to WAVE_MAPPER device. */
         deviceName = (char*)PaUtil_GroupAllocateMemory(
                     winMmeHostApi->allocations,
@@ -853,12 +825,12 @@ static PaError InitializeInputDeviceInfo( PaWinMmeHostApiRepresentation *winMmeH
             result = paInsufficientMemory;
             goto error;
         }
-        CopyTCharStringToUtf8CString( deviceName, len, wic.szPname );
+        CopyWCharStringToUtf8CString( deviceName, len, wic.szPname );
         strcat( deviceName, constInputMapperSuffix_ );
     }
     else
     {
-        len = TCharStringLen( wic.szPname ) + 1;
+        len = WCharStringLen( wic.szPname ) + 1;
         deviceName = (char*)PaUtil_GroupAllocateMemory(
                     winMmeHostApi->allocations,
                     (long)len );
@@ -867,7 +839,7 @@ static PaError InitializeInputDeviceInfo( PaWinMmeHostApiRepresentation *winMmeH
             result = paInsufficientMemory;
             goto error;
         }
-        CopyTCharStringToUtf8CString( deviceName, len, wic.szPname  );
+        CopyWCharStringToUtf8CString( deviceName, len, wic.szPname  );
     }
     deviceInfo->name = deviceName;
 
@@ -996,7 +968,7 @@ static PaError InitializeOutputDeviceInfo( PaWinMmeHostApiRepresentation *winMme
     char *deviceName; /* non-const ptr */
     char *deviceUID;
     MMRESULT mmresult;
-    WAVEOUTCAPS woc;
+    WAVEOUTCAPSW woc;
     PaDeviceInfo *deviceInfo = &winMmeDeviceInfo->inheritedDeviceInfo;
     size_t len;
 #ifdef PAWIN_USE_WDMKS_DEVICE_INFO
@@ -1011,7 +983,7 @@ static PaError InitializeOutputDeviceInfo( PaWinMmeHostApiRepresentation *winMme
     if (WAVE_MAPPER == winMmeOutputDeviceId)
         return paNoError;
 
-    mmresult = waveOutGetDevCaps( winMmeOutputDeviceId, &woc, sizeof( WAVEOUTCAPS ) );
+    mmresult = waveOutGetDevCapsW( winMmeOutputDeviceId, &woc, sizeof( WAVEOUTCAPSW ) );
     if( mmresult == MMSYSERR_NOMEM )
     {
         result = paInsufficientMemory;
@@ -1032,7 +1004,7 @@ static PaError InitializeOutputDeviceInfo( PaWinMmeHostApiRepresentation *winMme
     if( winMmeOutputDeviceId == WAVE_MAPPER )
     {
         /* Append I/O suffix to WAVE_MAPPER device. */
-        len = TCharStringLen( woc.szPname ) + 1 + sizeof(constOutputMapperSuffix_);
+        len = WCharStringLen( woc.szPname ) + 1 + sizeof(constOutputMapperSuffix_);
         deviceName = (char*)PaUtil_GroupAllocateMemory(
                     winMmeHostApi->allocations, 
                     (long)len );
@@ -1041,12 +1013,12 @@ static PaError InitializeOutputDeviceInfo( PaWinMmeHostApiRepresentation *winMme
             result = paInsufficientMemory;
             goto error;
         }
-        CopyTCharStringToUtf8CString( deviceName, len, woc.szPname );
+        CopyWCharStringToUtf8CString( deviceName, len, woc.szPname );
         strcat( deviceName, constOutputMapperSuffix_ );
     }
     else
     {
-        len = TCharStringLen( woc.szPname ) + 1;
+        len = WCharStringLen( woc.szPname ) + 1;
         deviceName = (char*)PaUtil_GroupAllocateMemory(
                     winMmeHostApi->allocations, 
                     (long)len );
@@ -1055,7 +1027,7 @@ static PaError InitializeOutputDeviceInfo( PaWinMmeHostApiRepresentation *winMme
             result = paInsufficientMemory;
             goto error;
         }
-        CopyTCharStringToUtf8CString( deviceName, len, woc.szPname );
+        CopyWCharStringToUtf8CString( deviceName, len, woc.szPname );
     }
     deviceInfo->name = deviceName;
 
