@@ -417,7 +417,7 @@ SetDeviceInfoTransportType(UINT winMmeDeviceId, PaDeviceInfo *deviceInfo)
         if (deviceInfo->maxInputChannels > 0)
         {
             if (waveInMessage(
-                        (HWAVEIN)winMmeDeviceId,
+                        (HWAVEIN)((UINT_PTR)winMmeDeviceId),
                         DRV_QUERYDEVICEINTERFACESIZE,
                         (DWORD_PTR)&deviceInterfaceSize,
                         0)
@@ -426,7 +426,7 @@ SetDeviceInfoTransportType(UINT winMmeDeviceId, PaDeviceInfo *deviceInfo)
                 deviceInterface = PaUtil_AllocateMemory(deviceInterfaceSize);
                 if (deviceInterface
                         && (waveInMessage(
-                                    (HWAVEIN)winMmeDeviceId,
+                                    (HWAVEIN)((UINT_PTR)winMmeDeviceId),
                                     DRV_QUERYDEVICEINTERFACE,
                                     (DWORD_PTR)deviceInterface,
                                     deviceInterfaceSize)
@@ -440,7 +440,7 @@ SetDeviceInfoTransportType(UINT winMmeDeviceId, PaDeviceInfo *deviceInfo)
         else if (deviceInfo->maxOutputChannels > 0)
         {
             if (waveOutMessage(
-                        (HWAVEOUT)winMmeDeviceId,
+                        (HWAVEOUT)((UINT_PTR)winMmeDeviceId),
                         DRV_QUERYDEVICEINTERFACESIZE,
                         (DWORD_PTR)&deviceInterfaceSize,
                         0)
@@ -449,7 +449,7 @@ SetDeviceInfoTransportType(UINT winMmeDeviceId, PaDeviceInfo *deviceInfo)
                 deviceInterface = PaUtil_AllocateMemory(deviceInterfaceSize);
                 if (deviceInterface
                         && (waveOutMessage(
-                                    (HWAVEOUT)winMmeDeviceId,
+                                    (HWAVEOUT)((UINT_PTR)winMmeDeviceId),
                                     DRV_QUERYDEVICEINTERFACE,
                                     (DWORD_PTR)deviceInterface,
                                     deviceInterfaceSize)
@@ -875,25 +875,25 @@ static PaError InitializeInputDeviceInfo( PaWinMmeHostApiRepresentation *winMmeH
     // Get the size (including the terminating null) of
     // the endpoint ID string of the waveOut device.
     mmr = waveInMessage(
-        winMmeInputDeviceId,
+        (HWAVEIN)((UINT_PTR)winMmeInputDeviceId),
         DRV_QUERYFUNCTIONINSTANCEIDSIZE,
-        (DWORD_PTR)&cbEndpointIdSize, NULL);
+        (DWORD_PTR)&cbEndpointIdSize, 0);
 
     if (mmr == MMSYSERR_NOERROR)  // do sizes match?
     {
         WCHAR *pstrEndpointId = NULL;
-        pstrEndpointId = (WCHAR *)PaUtil_GroupAllocateMemory(winMmeHostApi->allocations, cbEndpointIdSize);
+        pstrEndpointId = (WCHAR *)PaUtil_GroupAllocateMemory(winMmeHostApi->allocations, (long)cbEndpointIdSize);
 
         // Get the endpoint ID string for this waveOut device.
         mmr = waveInMessage(
-            winMmeInputDeviceId,
+            (HWAVEIN)((UINT_PTR)winMmeInputDeviceId),
             DRV_QUERYFUNCTIONINSTANCEID,
             (DWORD_PTR)pstrEndpointId,
             cbEndpointIdSize);
 
         if (mmr == MMSYSERR_NOERROR)
         {
-            deviceUID = (char *)PaUtil_GroupAllocateMemory(winMmeHostApi->allocations, wcslen(pstrEndpointId) + 1);
+            deviceUID = (char *)PaUtil_GroupAllocateMemory(winMmeHostApi->allocations, (long)wcslen(pstrEndpointId) + 1);
             if( !deviceUID )
             {
                 result = paInsufficientMemory;
@@ -901,7 +901,7 @@ static PaError InitializeInputDeviceInfo( PaWinMmeHostApiRepresentation *winMmeH
             }
             wcstombs(deviceUID, pstrEndpointId, sizeof(deviceUID));
             WideCharToMultiByte( CP_ACP, WC_COMPOSITECHECK | WC_DEFAULTCHAR,\
-                    pstrEndpointId, -1, deviceUID, wcslen(pstrEndpointId), NULL, NULL );
+                    pstrEndpointId, -1, deviceUID, (int)wcslen(pstrEndpointId), NULL, NULL );
             deviceInfo->deviceUID = deviceUID;
         }
         /*else
@@ -1065,25 +1065,25 @@ static PaError InitializeOutputDeviceInfo( PaWinMmeHostApiRepresentation *winMme
     // Get the size (including the terminating null) of
     // the endpoint ID string of the waveOut device.
     mmr = waveOutMessage(
-        winMmeOutputDeviceId,
+        (HWAVEOUT)((UINT_PTR)winMmeOutputDeviceId),
         DRV_QUERYFUNCTIONINSTANCEIDSIZE,
-        (DWORD_PTR)&cbEndpointIdSize, NULL);
+        (DWORD_PTR)&cbEndpointIdSize, 0);
 
     if (mmr == MMSYSERR_NOERROR)  // do sizes match?
     {
         WCHAR *pstrEndpointId = NULL;
-        pstrEndpointId = (WCHAR *)PaUtil_GroupAllocateMemory(winMmeHostApi->allocations, cbEndpointIdSize);
+        pstrEndpointId = (WCHAR *)PaUtil_GroupAllocateMemory(winMmeHostApi->allocations, (long)cbEndpointIdSize);
 
         // Get the endpoint ID string for this waveOut device.
         mmr = waveOutMessage(
-            winMmeOutputDeviceId,
+            (HWAVEOUT)((UINT_PTR)winMmeOutputDeviceId),
             DRV_QUERYFUNCTIONINSTANCEID,
             (DWORD_PTR)pstrEndpointId,
             cbEndpointIdSize);
 
         if (mmr == MMSYSERR_NOERROR)
         {
-            deviceUID = (char *)PaUtil_GroupAllocateMemory(winMmeHostApi->allocations, wcslen(pstrEndpointId));
+            deviceUID = (char *)PaUtil_GroupAllocateMemory(winMmeHostApi->allocations, (long)wcslen(pstrEndpointId));
             if( !deviceUID )
             {
                 result = paInsufficientMemory;
@@ -1092,7 +1092,7 @@ static PaError InitializeOutputDeviceInfo( PaWinMmeHostApiRepresentation *winMme
             wcstombs(deviceUID, pstrEndpointId, sizeof(deviceUID));
 
             WideCharToMultiByte( CP_ACP, WC_COMPOSITECHECK | WC_DEFAULTCHAR,\
-                    pstrEndpointId, -1, deviceUID, wcslen(pstrEndpointId), NULL, NULL );
+                    pstrEndpointId, -1, deviceUID, (int)wcslen(pstrEndpointId), NULL, NULL );
             deviceInfo->deviceUID = deviceUID;
         }
         /*else
