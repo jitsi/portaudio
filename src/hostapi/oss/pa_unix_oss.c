@@ -538,13 +538,13 @@ static PaError BuildDeviceList( PaOSSHostApiRepresentation *ossApi )
      * add it to a linked list.
      * A: Set an arbitrary of 100 devices, should probably be a smarter way. */
 
-    for( i = 0; i < 100; i++ )
+    for( i = -1; i < 100; i++ )
     {
        char deviceName[32];
        PaDeviceInfo *deviceInfo;
        int testResult;
 
-       if( i == 0 )
+       if( i == -1 )
           snprintf(deviceName, sizeof (deviceName), "%s", DEVICE_NAME_BASE);
        else
           snprintf(deviceName, sizeof (deviceName), "%s%d", DEVICE_NAME_BASE, i);
@@ -964,7 +964,7 @@ static PaError GetAvailableFormats( PaOssStreamComponent *component, PaSampleFor
         frmts |= paInt8;
     if( mask & AFMT_S16_NE )
         frmts |= paInt16;
-    else
+    if( frmts == 0 )
         result = paSampleFormatNotSupported;
 
     *availableFormats = frmts;

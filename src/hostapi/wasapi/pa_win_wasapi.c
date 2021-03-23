@@ -846,8 +846,8 @@ static BOOL SystemTimer_SetGranularity(SystemTimer *timer, UINT32 granularity)
 
     if (timeGetDevCaps(&caps, sizeof(caps)) == MMSYSERR_NOERROR)
     {
-        if (timer->granularity < caps.wPeriodMin)
-            timer->granularity = caps.wPeriodMin;
+        if (timer->granularity < (INT32)caps.wPeriodMin)
+            timer->granularity = (INT32)caps.wPeriodMin;
     }
 
     if (timeBeginPeriod(timer->granularity) != TIMERR_NOERROR)
@@ -2136,7 +2136,7 @@ static PaError CreateDeviceList(PaWasapiHostApiRepresentation *paWasapi, PaHostA
 {
     PaUtilHostApiRepresentation *hostApi = (PaUtilHostApiRepresentation *)paWasapi;
     PaError result = paNoError;
-    PaDeviceInfo *deviceInfoArray;
+    PaDeviceInfo *deviceInfoArray = NULL;
     UINT32 i;
     WCHAR *defaultRenderId = NULL;
     WCHAR *defaultCaptureId = NULL;
@@ -2254,7 +2254,7 @@ static PaError CreateDeviceList(PaWasapiHostApiRepresentation *paWasapi, PaHostA
 #endif
 
     // Allocate memory for the device list
-    if ((deviceInfoArray = AllocateDeviceListMemory(paWasapi)) == NULL)
+    if ((paWasapi->deviceCount != 0) && ((deviceInfoArray = AllocateDeviceListMemory(paWasapi)) == NULL))
     {
         result = paInsufficientMemory;
         goto error;
@@ -2288,7 +2288,7 @@ static PaError CreateDeviceList(PaWasapiHostApiRepresentation *paWasapi, PaHostA
 
     // Fill the remaining slots with inactive device info
 #if defined(PA_WASAPI_MAX_CONST_DEVICE_COUNT) && (PA_WASAPI_MAX_CONST_DEVICE_COUNT > 0)
-    if (hostApi->info.deviceCount < PA_WASAPI_MAX_CONST_DEVICE_COUNT)
+    if ((hostApi->info.deviceCount != 0) && (hostApi->info.deviceCount < PA_WASAPI_MAX_CONST_DEVICE_COUNT))
     {        
         for (i = hostApi->info.deviceCount; i < PA_WASAPI_MAX_CONST_DEVICE_COUNT; ++i)
         {
@@ -5919,6 +5919,12 @@ PA_THREAD_FUNC ProcThreadEvent(void *param)
         goto thread_error;
     }
 
+    // Signal: stream running
+    stream->running = TRUE;
+
+    // Notify: thread started
+    SetEvent(stream->hThreadStart);
+
     // Initialize event & start INPUT stream
     if (stream->in.clientProc)
     {
@@ -5968,12 +5974,6 @@ PA_THREAD_FUNC ProcThreadEvent(void *param)
         }
 
     }
-
-    // Signal: stream running
-    stream->running = TRUE;
-
-    // Notify: thread started
-    SetEvent(stream->hThreadStart);
 
     // Notify: state
     NotifyStateChanged(stream, paWasapiStreamStateThreadStart, ERROR_SUCCESS);
@@ -6200,6 +6200,12 @@ PA_THREAD_FUNC ProcThreadPoll(void *param)
     // Boost thread priority
     PaWasapi_ThreadPriorityBoost((void **)&stream->hAvTask, stream->nThreadPriority);
 
+    // Signal: stream running
+    stream->running = TRUE;
+
+    // Notify: thread started
+    SetEvent(stream->hThreadStart);
+
     // Initialize event & start INPUT stream
     if (stream->in.clientProc)
     {
@@ -6266,12 +6272,6 @@ PA_THREAD_FUNC ProcThreadPoll(void *param)
             goto thread_error;
         }
     }
-
-    // Signal: stream running
-    stream->running = TRUE;
-
-    // Notify: thread started
-    SetEvent(stream->hThreadStart);
 
     // Notify: state
     NotifyStateChanged(stream, paWasapiStreamStateThreadStart, ERROR_SUCCESS);
