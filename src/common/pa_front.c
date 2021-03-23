@@ -1956,4 +1956,3 @@ void PaUtil_DevicesChanged(unsigned state, void* pData)
     }
     PaUtil_UnlockHotPlug();
 }
-

@@ -2111,7 +2111,7 @@ static PaError PaAlsaStreamComponent_InitialConfigure( PaAlsaStreamComponent *se
     }
     else
     {
-       PA_ENSURE( paUnanticipatedHostError );
+        PA_ENSURE( paUnanticipatedHostError );
     }
 
     ENSURE_( alsa_snd_pcm_hw_params_set_channels( pcm, hwParams, self->numHostChannels ), paInvalidChannelCount );
@@ -3893,8 +3893,8 @@ static PaError PaAlsaStream_WaitForFrames( PaAlsaStream *self, unsigned long *fr
             PaError res = PaAlsaStreamComponent_BeginPolling( &self->capture, capturePfds );
             if( res != paNoError)
             {
-              xrun = 1;
-              goto end;
+                xrun = 1;
+                goto end;
             }
             totalFds += self->capture.nfds;
         }
@@ -3905,8 +3905,8 @@ static PaError PaAlsaStream_WaitForFrames( PaAlsaStream *self, unsigned long *fr
             PaError res = PaAlsaStreamComponent_BeginPolling( &self->playback, playbackPfds );
             if( res != paNoError)
             {
-              xrun = 1;
-              goto end;
+                xrun = 1;
+                goto end;
             }
             totalFds += self->playback.nfds;
         }
