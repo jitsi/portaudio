@@ -58,7 +58,7 @@
  RDB20020417 - stopped counting WAVE_MAPPER when there were no real devices
                refactoring, renaming and fixed a few edge case bugs
  RDB20020531 - converted to V19 framework
- ** NOTE  maintanance history is now stored in CVS **
+ ** NOTE  maintenance history is now stored in CVS **
 */
 
 /** @file
@@ -184,7 +184,7 @@
    survey of workable latency settings using patest_wmme_find_best_latency_params.c.
    See pdf attached to ticket 185 for a graph of the survey results:
    http://www.portaudio.com/trac/ticket/185
-
+   
    Workable latencies varied between 40ms and ~80ms on different systems (different
    combinations of hardware, 32 and 64 bit, WinXP, Vista and Win7. We didn't
    get enough Vista results to know if Vista has systemically worse latency.
@@ -193,10 +193,10 @@
 #define PA_MME_WIN_WDM_DEFAULT_LATENCY_                             (0.090)
 
 
-/* When client suggestedLatency could result in many host buffers, we aim to have around 8,
+/* When client suggestedLatency could result in many host buffers, we aim to have around 8, 
    based off Windows documentation that suggests that the kmixer uses 8 buffers. This choice
-   is somewhat arbitrary here, since we havn't observed significant stability degredation
-   with using either more, or less buffers.
+   is somewhat arbitrary here, since we haven't observed significant stability degredation
+   with using either more, or less buffers.     
 */
 #define PA_MME_TARGET_HOST_BUFFER_COUNT_    8
 
@@ -216,8 +216,8 @@ static char *CopyTCharStringToUtf8CString(char *destination, size_t destLengthBy
 #else
     /* The cbMultiByte parameter ["destLengthBytes" below] is:
     """
-    Size, in bytes, of the buffer indicated by lpMultiByteStr ["destination" below].
-    If this parameter is set to 0, the function returns the required buffer
+    Size, in bytes, of the buffer indicated by lpMultiByteStr ["destination" below]. 
+    If this parameter is set to 0, the function returns the required buffer 
     size for lpMultiByteStr and makes no use of the output parameter itself.
     """
     Source: WideCharToMultiByte at MSDN:
@@ -237,21 +237,21 @@ static char *CopyTCharStringToUtf8CString(char *destination, size_t destLengthBy
     {
         intDestLengthBytes = INT_MAX;
     }
-
+    
     if (WideCharToMultiByte(CP_UTF8, 0, source, -1, destination, /*cbMultiByte=*/intDestLengthBytes, NULL, NULL) == 0)
         return NULL;
     return destination;
 #endif
 }
 
-/* returns required length (in bytes) of destination buffer when
+/* returns required length (in bytes) of destination buffer when 
    converting TCHAR string to UTF8 bytes, not including the terminating null. */
 static size_t TCharStringLen(const TCHAR *str)
 {
 #if !defined(_UNICODE) && !defined(UNICODE)
     return strlen(str);
 #else
-    return WideCharToMultiByte(CP_UTF8, 0, str, -1, NULL, 0, NULL, NULL);
+    return WideCharToMultiByte(CP_UTF8, 0, str, -1, NULL, 0, NULL, NULL);	
 #endif
 }
 
@@ -811,7 +811,7 @@ static PaError InitializeInputDeviceInfo( PaWinMmeHostApiRepresentation *winMmeH
     WAVEINCAPS wic;
     PaDeviceInfo *deviceInfo = &winMmeDeviceInfo->inheritedDeviceInfo;
     size_t len;
-
+    
     *success = 0;
 
     /* We do not want Microsoft's Sound Mapper because it is a virtual device
@@ -1199,7 +1199,7 @@ PaError PaWinMme_Initialize( PaUtilHostApiRepresentation **hostApi, PaHostApiInd
     (*hostApi)->info.type = paMME;
     (*hostApi)->info.name = "MME";
 
-
+    
     /* initialise device counts and default devices under the assumption that
         there are no devices. These values are incremented below if and when
         devices are successfully initialized.
@@ -1759,7 +1759,7 @@ static unsigned long ComputeHostBufferCountForFixedBufferSizeFrames(
         unsigned long hostBufferSizeFrames,
         unsigned long minimumBufferCount )
 {
-    /* Calculate the number of buffers of length hostFramesPerBuffer
+    /* Calculate the number of buffers of length hostFramesPerBuffer 
        that fit in suggestedLatencyFrames, rounding up to the next integer.
 
        The value (hostBufferSizeFrames - 1) below is to ensure the buffer count is rounded up.
@@ -1778,11 +1778,11 @@ static unsigned long ComputeHostBufferCountForFixedBufferSizeFrames(
 }
 
 
-static unsigned long ComputeHostBufferSizeGivenHardUpperLimit(
+static unsigned long ComputeHostBufferSizeGivenHardUpperLimit( 
         unsigned long userFramesPerBuffer,
         unsigned long absoluteMaximumBufferSizeFrames )
 {
-    static unsigned long primes_[] = { 2, 3, 5, 7, 11, 13, 17, 19, 23,
+    static unsigned long primes_[] = { 2, 3, 5, 7, 11, 13, 17, 19, 23, 
             29, 31, 37, 41, 43, 47, 53, 59, 61, 67, 0 }; /* zero terminated */
 
     unsigned long result = userFramesPerBuffer;
@@ -1790,15 +1790,15 @@ static unsigned long ComputeHostBufferSizeGivenHardUpperLimit(
 
     assert( absoluteMaximumBufferSizeFrames > 67 ); /* assume maximum is large and we're only factoring by small primes */
 
-    /* search for the largest integer factor of userFramesPerBuffer less
+    /* search for the largest integer factor of userFramesPerBuffer less 
        than or equal to absoluteMaximumBufferSizeFrames */
 
-    /* repeatedly divide by smallest prime factors until a buffer size
+    /* repeatedly divide by smallest prime factors until a buffer size 
        smaller than absoluteMaximumBufferSizeFrames is found */
     while( result > absoluteMaximumBufferSizeFrames ){
 
         /* search for the smallest prime factor of result */
-        for( i=0; primes_[i] != 0; ++i )
+        for( i=0; primes_[i] != 0; ++i ) 
         {
             unsigned long p = primes_[i];
             unsigned long divided = result / p;
@@ -1851,17 +1851,17 @@ static PaError SelectHostBufferSizeFramesAndHostBufferCount(
             effectiveUserFramesPerBuffer = ComputeHostBufferSizeGivenHardUpperLimit( userFramesPerBuffer, absoluteMaximumBufferSizeFrames );
             assert( effectiveUserFramesPerBuffer <= absoluteMaximumBufferSizeFrames );
 
-            /* try to ensure that duration of host buffering is at least as
+            /* try to ensure that duration of host buffering is at least as 
                 large as duration of user buffer. */
             if( suggestedLatencyFrames < userFramesPerBuffer )
-                suggestedLatencyFrames = userFramesPerBuffer;
+                suggestedLatencyFrames = userFramesPerBuffer; 
 
         }else{
 
             effectiveUserFramesPerBuffer = userFramesPerBuffer;
         }
     }
-
+                        
     /* compute a host buffer count based on suggestedLatencyFrames and our granularity */
 
     *hostBufferSizeFrames = effectiveUserFramesPerBuffer;
@@ -1871,28 +1871,28 @@ static PaError SelectHostBufferSizeFramesAndHostBufferCount(
 
     if( *hostBufferSizeFrames >= userFramesPerBuffer )
     {
-    /*
-        If there are too many host buffers we would like to coalesce
-           them by packing an integer number of user buffers into each host buffer.
-           We try to coalesce such that hostBufferCount will lie between
-           PA_MME_TARGET_HOST_BUFFER_COUNT_ and (PA_MME_TARGET_HOST_BUFFER_COUNT_*2)-1.
-           We limit coalescing to avoid exceeding either absoluteMaximumBufferSizeFrames and
-           preferredMaximumBufferSizeFrames.
+        /*
+            If there are too many host buffers we would like to coalesce 
+            them by packing an integer number of user buffers into each host buffer.
+            We try to coalesce such that hostBufferCount will lie between 
+            PA_MME_TARGET_HOST_BUFFER_COUNT_ and (PA_MME_TARGET_HOST_BUFFER_COUNT_*2)-1.
+            We limit coalescing to avoid exceeding either absoluteMaximumBufferSizeFrames and
+            preferredMaximumBufferSizeFrames. 
 
             First, compute a coalescing factor: the number of user buffers per host buffer.
             The goal is to achieve PA_MME_TARGET_HOST_BUFFER_COUNT_ total buffer count.
             Since our latency is computed based on (*hostBufferCount - 1) we compute a
             coalescing factor based on (*hostBufferCount - 1) and (PA_MME_TARGET_HOST_BUFFER_COUNT_-1).
 
-        The + (PA_MME_TARGET_HOST_BUFFER_COUNT_-2) term below is intended to round up.
-    */
-    numberOfUserBuffersPerHostBuffer = ((*hostBufferCount - 1) + (PA_MME_TARGET_HOST_BUFFER_COUNT_-2)) / (PA_MME_TARGET_HOST_BUFFER_COUNT_ - 1);
-
-    if( numberOfUserBuffersPerHostBuffer > 1 )
-    {
-        unsigned long maxCoalescedBufferSizeFrames = (absoluteMaximumBufferSizeFrames < preferredMaximumBufferSizeFrames) /* minimum of our limits */
-                        ? absoluteMaximumBufferSizeFrames
-                        : preferredMaximumBufferSizeFrames;
+            The + (PA_MME_TARGET_HOST_BUFFER_COUNT_-2) term below is intended to round up.
+        */
+        numberOfUserBuffersPerHostBuffer = ((*hostBufferCount - 1) + (PA_MME_TARGET_HOST_BUFFER_COUNT_-2)) / (PA_MME_TARGET_HOST_BUFFER_COUNT_ - 1);
+        
+        if( numberOfUserBuffersPerHostBuffer > 1 )
+        {
+            unsigned long maxCoalescedBufferSizeFrames = (absoluteMaximumBufferSizeFrames < preferredMaximumBufferSizeFrames) /* minimum of our limits */
+                            ? absoluteMaximumBufferSizeFrames
+                            : preferredMaximumBufferSizeFrames;
 
             unsigned long maxUserBuffersPerHostBuffer = maxCoalescedBufferSizeFrames / effectiveUserFramesPerBuffer; /* don't coalesce more than this */
 
@@ -1918,8 +1918,8 @@ static PaError CalculateMaxHostSampleFrameSizeBytes(
         int *hostSampleFrameSizeBytes )
 {
     unsigned int i;
-    /* PA WMME streams may aggregate multiple WMME devices. When the stream addresses
-       more than one device in a single direction, maxDeviceChannelCount is the maximum
+    /* PA WMME streams may aggregate multiple WMME devices. When the stream addresses 
+       more than one device in a single direction, maxDeviceChannelCount is the maximum 
        number of channels used by a single device.
     */
     int maxDeviceChannelCount = channelCount;
@@ -1964,7 +1964,7 @@ static PaError CalculateBufferSettings(
     if( inputChannelCount > 0 ) /* stream has input */
     {
         int hostInputFrameSizeBytes;
-        result = CalculateMaxHostSampleFrameSizeBytes(
+        result = CalculateMaxHostSampleFrameSizeBytes( 
                 inputChannelCount, hostInputSampleFormat, inputStreamInfo, &hostInputFrameSizeBytes );
         if( result != paNoError )
             goto error;
@@ -1986,7 +1986,7 @@ static PaError CalculateBufferSettings(
         }
         else
         {
-            /* input - not using low level latency parameters, so compute
+            /* input - not using low level latency parameters, so compute 
                hostFramesPerInputBuffer and hostInputBufferCount
                based on userFramesPerBuffer and suggestedInputLatency. */
 
@@ -1999,7 +1999,7 @@ static PaError CalculateBufferSettings(
                     userFramesPerBuffer,
                     minimumBufferCount,
                     (unsigned long)(PA_MME_MAX_HOST_BUFFER_SECS_ * sampleRate), /* in frames. preferred maximum */
-                    (PA_MME_MAX_HOST_BUFFER_BYTES_ / hostInputFrameSizeBytes),  /* in frames. a hard limit. note truncation due to
+                    (PA_MME_MAX_HOST_BUFFER_BYTES_ / hostInputFrameSizeBytes),  /* in frames. a hard limit. note truncation due to 
                                                                                 division is intentional here to limit max bytes */
                     hostFramesPerInputBuffer,
                     hostInputBufferCount );
@@ -2069,8 +2069,8 @@ static PaError CalculateBufferSettings(
                         *hostFramesPerInputBuffer = *hostFramesPerOutputBuffer;
 
                         *hostInputBufferCount = ComputeHostBufferCountForFixedBufferSizeFrames(
-                                (unsigned long)(suggestedInputLatency * sampleRate),
-                                *hostFramesPerInputBuffer,
+                                (unsigned long)(suggestedInputLatency * sampleRate), 
+                                *hostFramesPerInputBuffer, 
                                 PA_MME_MIN_HOST_INPUT_BUFFER_COUNT_FULL_DUPLEX_ );
                     }
                 }
@@ -2082,7 +2082,7 @@ static PaError CalculateBufferSettings(
                 based on userFramesPerBuffer and suggestedOutputLatency. */
 
             int hostOutputFrameSizeBytes;
-            result = CalculateMaxHostSampleFrameSizeBytes(
+            result = CalculateMaxHostSampleFrameSizeBytes( 
                     outputChannelCount, hostOutputSampleFormat, outputStreamInfo, &hostOutputFrameSizeBytes );
             if( result != paNoError )
                 goto error;
@@ -2094,7 +2094,7 @@ static PaError CalculateBufferSettings(
                     userFramesPerBuffer,
                     PA_MME_MIN_HOST_OUTPUT_BUFFER_COUNT_,
                     (unsigned long)(PA_MME_MAX_HOST_BUFFER_SECS_ * sampleRate), /* in frames. preferred maximum */
-                    (PA_MME_MAX_HOST_BUFFER_BYTES_ / hostOutputFrameSizeBytes),  /* in frames. a hard limit. note truncation due to
+                    (PA_MME_MAX_HOST_BUFFER_BYTES_ / hostOutputFrameSizeBytes),  /* in frames. a hard limit. note truncation due to 
                                                                                  division is intentional here to limit max bytes */
                     hostFramesPerOutputBuffer,
                     hostOutputBufferCount );
@@ -2118,8 +2118,8 @@ static PaError CalculateBufferSettings(
                         *hostFramesPerOutputBuffer = *hostFramesPerInputBuffer;
 
                         *hostOutputBufferCount = ComputeHostBufferCountForFixedBufferSizeFrames(
-                                (unsigned long)(suggestedOutputLatency * sampleRate),
-                                *hostOutputBufferCount,
+                                (unsigned long)(suggestedOutputLatency * sampleRate), 
+                                *hostOutputBufferCount, 
                                 PA_MME_MIN_HOST_OUTPUT_BUFFER_COUNT_ );
                     }
                     else
@@ -2127,8 +2127,8 @@ static PaError CalculateBufferSettings(
                         *hostFramesPerInputBuffer = *hostFramesPerOutputBuffer;
 
                         *hostInputBufferCount = ComputeHostBufferCountForFixedBufferSizeFrames(
-                                (unsigned long)(suggestedInputLatency * sampleRate),
-                                *hostFramesPerInputBuffer,
+                                (unsigned long)(suggestedInputLatency * sampleRate), 
+                                *hostFramesPerInputBuffer, 
                                 PA_MME_MIN_HOST_INPUT_BUFFER_COUNT_FULL_DUPLEX_ );
                     }
                 }   
@@ -2580,9 +2580,9 @@ static PaError ValidateWinMmeSpecificStreamInfo(
         {
             if( streamParameters->device != paUseHostApiSpecificDeviceSpecification )
                 return paInvalidDevice;
-
+    
             *deviceCount = streamInfo->deviceCount;
-        }
+        }	
     }
 
     return paNoError;
@@ -2610,21 +2610,21 @@ static PaError RetrieveDevicesFromStreamParameters(
                             streamInfo->devices[i].device, hostApi );
             if( result != paNoError )
                 return result;
-
+            
             devices[i].device = hostApiDevice;
             devices[i].channelCount = streamInfo->devices[i].channelCount;
-
+    
             totalChannelCount += devices[i].channelCount;
         }
-
+    
         if( totalChannelCount != streamParameters->channelCount )
         {
             /* channelCount must match total channels specified by multiple devices */
             return paInvalidChannelCount; /* REVIEW use of this error code */
         }
-    }
+    }	
     else
-    {
+    {		
         devices[0].device = streamParameters->device;
         devices[0].channelCount = streamParameters->channelCount;
     }
@@ -2925,7 +2925,7 @@ static PaError OpenStream( struct PaUtilHostApiRepresentation *hostApi,
     stream->primeStreamUsingCallback = ( (streamFlags&paPrimeOutputBuffersUsingStreamCallback) && streamCallback ) ? 1 : 0;
 
     /* time to sleep when throttling due to >100% cpu usage.
-        -a quater of a buffer's duration */
+        -a quarter of a buffer's duration */
     stream->throttledSleepMsecs =
             (unsigned long)(stream->bufferProcessor.framesPerHostBuffer *
              stream->bufferProcessor.samplePeriod * .25 * 1000);
@@ -3248,7 +3248,7 @@ PA_THREAD_FUNC ProcessingThreadProc( void *pArg )
         if( waitResult == WAIT_FAILED )
         {
             result = paUnanticipatedHostError;
-            /** @todo FIXME/REVIEW: can't return host error info from an asyncronous thread. see http://www.portaudio.com/trac/ticket/143 */
+            /** @todo FIXME/REVIEW: can't return host error info from an asynchronous thread. see http://www.portaudio.com/trac/ticket/143 */
             done = 1;
         }
         else if( waitResult == WAIT_TIMEOUT )
@@ -3523,7 +3523,7 @@ PA_THREAD_FUNC ProcessingThreadProc( void *pArg )
                             if( outputUnderflow && !done && !stream->stopProcessing )
                             {
                                 /* Recover from underflow in the case where the
-                                    underflow occured while processing the buffer
+                                    underflow occurred while processing the buffer
                                     we just finished */
 
                                 result = CatchUpOutputBuffers( stream );
@@ -3721,7 +3721,7 @@ static PaError StartStream( PaStream *s )
                 }
             }   
 
-            /* we queue all channels of a single buffer frame (accross all
+            /* we queue all channels of a single buffer frame (across all
                 devices, because some multidevice multichannel drivers work
                 better this way */
             for( j=0; j<stream->output.deviceCount; ++j )
