@@ -408,7 +408,7 @@ static PaError gatherDeviceInfo(PaMacAUHAL* auhalHostApi, void** scanResults, in
     {
        int i;
        for( i=0; i<outArgument->devCount; ++i )
-          printf( "Device %d\t: %ld\n", i, outArgument->devIds[i] );
+          printf( "Device %d\t: %ld\n", i, (long)outArgument->devIds[i] );
     }
 #endif
 
@@ -455,8 +455,8 @@ static PaError gatherDeviceInfo(PaMacAUHAL* auhalHostApi, void** scanResults, in
        }
     }   
 
-    VDBUG( ( "Default in : %ld\n", outArgument->devInputDevice ) );
-    VDBUG( ( "Default out: %ld\n", outArgument->devOutputDevice ) );
+    VDBUG( ( "Default in : %ld\n", (long)outArgument->devInputDevice ) );
+    VDBUG( ( "Default out: %ld\n", (long)outArgument->devOutputDevice ) );
 
     *scanResults = outArgument;
     return paNoError;
@@ -1708,15 +1708,15 @@ static PaError OpenAndSetupOneAudioUnit(
 
     if( inStreamParams && outStreamParams )
     {
-        VDBUG( ("Opened device %ld for input and output.\n", *audioDevice ) );
+        VDBUG( ("Opened device %ld for input and output.\n", (long)*audioDevice ) );
     }
     else if( inStreamParams )
     {
-        VDBUG( ("Opened device %ld for input.\n", *audioDevice ) );
+        VDBUG( ("Opened device %ld for input.\n", (long)*audioDevice ) );
     }
     else if( outStreamParams )
     {
-        VDBUG( ("Opened device %ld for output.\n", *audioDevice ) );
+        VDBUG( ("Opened device %ld for output.\n", (long)*audioDevice ) );
     }
     return paNoError;
 #undef ERR_WRAP
@@ -1778,7 +1778,7 @@ static UInt32 CalculateOptimalBufferSize( PaMacAUHAL *auhalHostApi,
 
     }else{
     	VDBUG( ("Block Size unspecified. Based on Latency, the user wants a Block Size near: %ld.\n",
-            resultBufferSizeFrames ) );
+            (long)resultBufferSizeFrames ) );
     }
     
     // Clip to the capabilities of the device.
@@ -1793,7 +1793,7 @@ static UInt32 CalculateOptimalBufferSize( PaMacAUHAL *auhalHostApi,
         ClipToDeviceBufferSize( auhalHostApi->devIds[outputParameters->device],
                                false, resultBufferSizeFrames, &resultBufferSizeFrames );
     }
-    VDBUG(("After querying hardware, setting block size to %ld.\n", resultBufferSizeFrames));
+    VDBUG(("After querying hardware, setting block size to %ld.\n", (long)resultBufferSizeFrames));
 
     return resultBufferSizeFrames;
 }
