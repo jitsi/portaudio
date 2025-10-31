@@ -57,7 +57,7 @@
 #define M_PI  (3.14159265)
 #endif
 #define TABLE_SIZE   (200)
-#define BALANCE_DELTA  (0.001)
+#define BALANCE_DELTA  (0.001f)
 
 typedef struct
 {
@@ -88,18 +88,18 @@ static int patestCallback( const void *inputBuffer,
 
     for( i=0; i<framesPerBuffer; i++ )
     {
-		// Smoothly pan between left and right.
-		if( data->currentBalance < data->targetBalance )
+        // Smoothly pan between left and right.
+        if( data->currentBalance < data->targetBalance )
         {
-			data->currentBalance += BALANCE_DELTA;
+            data->currentBalance += BALANCE_DELTA;
         }
-		else if( data->currentBalance > data->targetBalance )
+        else if( data->currentBalance > data->targetBalance )
         {
-			data->currentBalance -= BALANCE_DELTA;
+            data->currentBalance -= BALANCE_DELTA;
         }
-		// Apply left/right balance.
+        // Apply left/right balance.
         *out++ = data->sine[data->left_phase] * (1.0f - data->currentBalance);  /* left */
-		*out++ = data->sine[data->right_phase] * data->currentBalance;  /* right */
+        *out++ = data->sine[data->right_phase] * data->currentBalance;  /* right */
 
         data->left_phase += 1;
         if( data->left_phase >= TABLE_SIZE ) data->left_phase -= TABLE_SIZE;
@@ -160,13 +160,13 @@ int main(void)
     printf("Play for several seconds.\n");
     for( i=0; i<4; i++ )
     {
-		printf("Hear low sound on left side.\n");
-		data.targetBalance = 0.01;
+        printf("Hear low sound on left side.\n");
+        data.targetBalance = 0.01f;
         Pa_Sleep( 1000 );
-		
-		printf("Hear high sound on right side.\n");
-		data.targetBalance = 0.99;
-        Pa_Sleep( 1000 ); 
+
+        printf("Hear high sound on right side.\n");
+        data.targetBalance = 0.99f;
+        Pa_Sleep( 1000 );
     }
 
     err = Pa_StopStream( stream );

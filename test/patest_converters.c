@@ -44,6 +44,8 @@
  * requested that these non-binding requests be included along with the
  * license above.
  */
+
+#include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -68,47 +70,10 @@
 static PaSampleFormat sampleFormats_[ SAMPLE_FORMAT_COUNT ] =
     { paFloat32, paInt32, paInt24, paInt16, paInt8, paUInt8 }; /* all standard PA sample formats */
 
-static const char* sampleFormatNames_[SAMPLE_FORMAT_COUNT] =
-    { "paFloat32", "paInt32", "paInt24", "paInt16", "paInt8", "paUInt8" };
-
-
 static const char* abbreviatedSampleFormatNames_[SAMPLE_FORMAT_COUNT] =
     { "f32", "i32", "i24", "i16", " i8", "ui8" };
 
-
 PaError My_Pa_GetSampleSize( PaSampleFormat format );
-
-/*
-    available flags are paClipOff and paDitherOff
-    clipping is usually applied for float -> int conversions
-    dither is usually applied for all downconversions (ie anything but 8bit->8bit conversions
-*/
-
-static int CanClip( PaSampleFormat sourceFormat, PaSampleFormat destinationFormat )
-{
-    if( sourceFormat == paFloat32 && destinationFormat != sourceFormat )
-        return 1;
-    else
-        return 0;
-}
-
-static int CanDither( PaSampleFormat sourceFormat, PaSampleFormat destinationFormat )
-{
-    if( sourceFormat < destinationFormat && sourceFormat != paInt8 )
-        return 1;
-    else
-        return 0;
-}
-
-static void GenerateOneCycleSineReference( double *out, int frameCount, int strideFrames )
-{
-    int i;
-    for( i=0; i < frameCount; ++i ){
-        *out = sin( ((double)i/(double)frameCount) * 2. * M_PI );
-        out += strideFrames;
-    }
-}
-
 
 static void GenerateOneCycleSine( PaSampleFormat format, void *buffer, int frameCount, int strideFrames )
 {
@@ -215,7 +180,7 @@ float MaximumAbsDifference( float* sourceBuffer, float* referenceBuffer, int cou
     return result;
 }
 
-int main( const char **argv, int argc )
+int main( int argc, const char **argv )
 {
     PaUtilTriangularDitherGenerator ditherState;
     PaUtilConverter *converter;
@@ -227,6 +192,9 @@ int main( const char **argv, int argc )
     int passFailMatrix[SAMPLE_FORMAT_COUNT][SAMPLE_FORMAT_COUNT]; // [source][destination]
     float noiseAmplitudeMatrix[SAMPLE_FORMAT_COUNT][SAMPLE_FORMAT_COUNT]; // [source][destination]
     float amp;
+
+    (void) argc; /* Unused. */
+    (void) argv; /* Unused. */
 
 #define FLAG_COMBINATION_COUNT (4)
     PaStreamFlags flagCombinations[FLAG_COMBINATION_COUNT] = { paNoFlag, paClipOff, paDitherOff, paClipOff | paDitherOff };
@@ -261,7 +229,6 @@ int main( const char **argv, int argc )
             for( destinationFormatIndex = 0; destinationFormatIndex < SAMPLE_FORMAT_COUNT; ++destinationFormatIndex ){
                 sourceFormat = sampleFormats_[sourceFormatIndex];
                 destinationFormat = sampleFormats_[destinationFormatIndex];
-                //printf( "%s -> %s ", sampleFormatNames_[ sourceFormatIndex ], sampleFormatNames_[ destinationFormatIndex ] );
 
                 converter = PaUtil_SelectConverter( sourceFormat, destinationFormat, flags );
 
@@ -331,8 +298,8 @@ int main( const char **argv, int argc )
         printf( "}}}\n" ); // trac preformated text tag
 
         printf( "\n" );
-        printf( "=== Combined dynamic range (src->dest->float32) ===\n" );
-        printf( "Key: Noise amplitude in dBfs, X - fail (either above failed or dest->float32 failed)\n" );
+        printf( "=== Maximum absolute difference src -> dest -> float32 (non-exhaustive) ===\n" );
+        printf( "Key: Worst error amplitude in dBfs, X - fail (either above failed or dest->float32 failed)\n" );
         printf( "{{{\n" ); // trac preformated text tag
         printf( "in|  out:    " );
         for( destinationFormatIndex = 0; destinationFormatIndex < SAMPLE_FORMAT_COUNT; ++destinationFormatIndex ){
@@ -358,10 +325,12 @@ int main( const char **argv, int argc )
     free( destinationBuffer );
     free( sourceBuffer );
     free( referenceBuffer );
+
+    return 0;
 }
 
 // copied here for now otherwise we need to include the world just for this function.
-PaError My_Pa_GetSampleSize( PaSampleFormat format )
+int My_Pa_GetSampleSize( PaSampleFormat format )
 {
     int result;
 
@@ -387,9 +356,10 @@ PaError My_Pa_GetSampleSize( PaSampleFormat format )
         break;
 
     default:
-        result = paSampleFormatNotSupported;
+        assert(0); /* The above cases must cover all format data types. */
+        result = 4;
         break;
     }
 
-    return (PaError) result;
+    return result;
 }
