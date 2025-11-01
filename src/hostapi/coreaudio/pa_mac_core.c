@@ -411,7 +411,7 @@ static PaError gatherDeviceInfo(PaMacAUHAL* auhalHostApi, void** scanResults, in
         return paNoError;
 
     /* Allocate the out param for all the info we need */
-    outArgument = (PaMacScanDeviceInfosResults *) PaUtil_GroupAllocateMemory(
+    outArgument = (PaMacScanDeviceInfosResults *) PaUtil_GroupAllocateZeroInitializedMemory(
                     auhalHostApi->allocations, sizeof(PaMacScanDeviceInfosResults) );
 
     if( !outArgument )
@@ -434,8 +434,8 @@ static PaError gatherDeviceInfo(PaMacAUHAL* auhalHostApi, void** scanResults, in
 #ifdef MAC_CORE_VERBOSE_DEBUG
     {
         int i;
-       for( i=0; i<outArgument->devCount; ++i )
-          printf( "Device %d\t: %ld\n", i, (long)outArgument->devIds[i] );
+        for( i=0; i<outArgument->devCount; ++i )
+            printf( "Device %d\t: %ld\n", i, (long)outArgument->devIds[i] );
     }
 #endif
 
@@ -450,11 +450,11 @@ static PaError gatherDeviceInfo(PaMacAUHAL* auhalHostApi, void** scanResults, in
             &size,
                      &outArgument->devInputDevice) ) {
         int i;
-       outArgument->devInputDevice = kAudioDeviceUnknown;
+        outArgument->devInputDevice = kAudioDeviceUnknown;
         VDBUG(("Failed to get default input device from OS."));
         VDBUG((" I will substitute the first available input Device."));
 
-       for( i=0; i< outArgument->devCount; ++i ) {
+        for( i=0; i< outArgument->devCount; ++i ) {
             PaDeviceInfo devInfo;
             if( 0 != GetChannelInfo( auhalHostApi, &devInfo,
                                    outArgument->devIds[i], TRUE ) )
@@ -468,10 +468,10 @@ static PaError gatherDeviceInfo(PaMacAUHAL* auhalHostApi, void** scanResults, in
             &size,
                      &outArgument->devOutputDevice) ) {
         int i;
-       outArgument->devOutputDevice  = kAudioDeviceUnknown;
+        outArgument->devOutputDevice  = kAudioDeviceUnknown;
         VDBUG(("Failed to get default output device from OS."));
         VDBUG((" I will substitute the first available output Device."));
-       for( i=0; i<outArgument->devCount; ++i ) {
+        for( i=0; i<outArgument->devCount; ++i ) {
             PaDeviceInfo devInfo;
             if( 0 != GetChannelInfo( auhalHostApi, &devInfo,
                                    outArgument->devIds[i], FALSE ) )
@@ -754,7 +754,7 @@ static PaError InitializeDeviceInfo( PaMacAUHAL *auhalHostApi,
 
     CFIndex deviceUIDLength = CFStringGetLength(deviceUIDString) + 1;
     char *ASCIIDeviceUID
-        = PaUtil_GroupAllocateMemory(auhalHostApi->allocations,deviceUIDLength);
+        = PaUtil_GroupAllocateZeroInitializedMemory(auhalHostApi->allocations,deviceUIDLength);
     if ( !ASCIIDeviceUID )
         return paInsufficientMemory;
 
@@ -1172,8 +1172,8 @@ static OSStatus UpdateSampleRateFromDeviceProperty( PaMacCoreStream *stream, Aud
 {
     PaMacCoreDeviceProperties * deviceProperties = isInput ? &stream->inputProperties : &stream->outputProperties;
 
-	Float64 sampleRate = 0.0;
-	UInt32 propSize = sizeof(Float64);
+    Float64 sampleRate = 0.0;
+    UInt32 propSize = sizeof(Float64);
     OSStatus osErr = PaMacCore_AudioDeviceGetProperty( deviceID, 0, isInput, sampleRatePropertyID, &propSize, &sampleRate);
     if( (osErr == noErr) && (sampleRate > 1000.0) ) /* avoid divide by zero if there's an error */
     {
@@ -2867,17 +2867,17 @@ static ComponentResult BlockWhileAudioUnitIsRunning( AudioUnit audioUnit, AudioU
         ComponentResult err = AudioUnitGetProperty( audioUnit, kAudioOutputUnitProperty_IsRunning, kAudioUnitScope_Global, element,  &isRunning, &s );
         if( err )
             return err;
-       Pa_Sleep( waitTime );
+        Pa_Sleep( waitTime );
 
-       // If a timeout is encountered, continue.  However, testing has
-       // shown that it is possible to unplug a device and to wait here
-       // forever. In order to allow the caller to handle such cases of
-       // repeated timeouts, do eventually given up.
-       totalTimeout += waitTime;
-       if( PA_COREAUDIO_MIN_TIMEOUT_MSEC_ <= totalTimeout)
-       {
-           return paTimedOut;
-       }
+        // If a timeout is encountered, continue.  However, testing has
+        // shown that it is possible to unplug a device and to wait here
+        // forever. In order to allow the caller to handle such cases of
+        // repeated timeouts, do eventually given up.
+        totalTimeout += waitTime;
+        if( PA_COREAUDIO_MIN_TIMEOUT_MSEC_ <= totalTimeout)
+        {
+            return paTimedOut;
+        }
     }
     return noErr;
 }
@@ -2899,18 +2899,18 @@ static PaError FinishStoppingStream( PaMacCoreStream *stream )
     }
     else
     {
-       if( stream->inputUnit )
-       {
-          ERR_WRAP(AudioOutputUnitStop(stream->inputUnit) );
-          ERR_WRAP( BlockWhileAudioUnitIsRunning(stream->inputUnit,1) );
-          ERR_WRAP(AudioUnitReset(stream->inputUnit,kAudioUnitScope_Global,1));
-       }
-       if( stream->outputUnit )
-       {
-          ERR_WRAP(AudioOutputUnitStop(stream->outputUnit));
-          ERR_WRAP( BlockWhileAudioUnitIsRunning(stream->outputUnit,0));
-          ERR_WRAP(AudioUnitReset(stream->outputUnit,kAudioUnitScope_Global,0));
-       }
+        if( stream->inputUnit )
+        {
+            ERR_WRAP(AudioOutputUnitStop(stream->inputUnit) );
+            ERR_WRAP( BlockWhileAudioUnitIsRunning(stream->inputUnit,1) );
+            ERR_WRAP(AudioUnitReset(stream->inputUnit,kAudioUnitScope_Global,1));
+        }
+        if( stream->outputUnit )
+        {
+            ERR_WRAP(AudioOutputUnitStop(stream->outputUnit));
+            ERR_WRAP( BlockWhileAudioUnitIsRunning(stream->outputUnit,0));
+            ERR_WRAP(AudioUnitReset(stream->outputUnit,kAudioUnitScope_Global,0));
+        }
     }
     if( stream->inputRingBuffer.buffer ) {
         PaUtil_FlushRingBuffer( &stream->inputRingBuffer );
@@ -3016,7 +3016,7 @@ static PaError ScanDeviceInfos(struct PaUtilHostApiRepresentation *hostApi, PaHo
         int count = 0;
 
         /* allocate array for pointers to PaDeviceInfo structs */
-        out->deviceInfos = (PaDeviceInfo**)PaUtil_GroupAllocateMemory(
+        out->deviceInfos = (PaDeviceInfo**)PaUtil_GroupAllocateZeroInitializedMemory(
                 auhalHostApi->allocations, sizeof(PaDeviceInfo*) * out->devCount);
         if( !out->deviceInfos )
         {
@@ -3025,7 +3025,7 @@ static PaError ScanDeviceInfos(struct PaUtilHostApiRepresentation *hostApi, PaHo
         }
 
         /* allocate all device info structs in a contiguous block */
-        deviceInfoArray = (PaDeviceInfo*)PaUtil_GroupAllocateMemory(
+        deviceInfoArray = (PaDeviceInfo*)PaUtil_GroupAllocateZeroInitializedMemory(
                 auhalHostApi->allocations, sizeof(PaDeviceInfo) * out->devCount );
         if( !deviceInfoArray )
         {
@@ -3060,7 +3060,7 @@ static PaError ScanDeviceInfos(struct PaUtilHostApiRepresentation *hostApi, PaHo
                 int j;
                 out->devCount--;
                 for( j=i; j<out->devCount; ++j )
-                   out->devIds[j] = out->devIds[j+1];
+                    out->devIds[j] = out->devIds[j+1];
                 i--;
             }
         }
@@ -3137,4 +3137,3 @@ static PaError DisposeDeviceInfos(struct PaUtilHostApiRepresentation *hostApi, v
 
     return paNoError;
 }
-

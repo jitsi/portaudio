@@ -15,7 +15,7 @@
 extern void PaUtil_DevicesChanged(unsigned, void*);
 
 /* Callback for audio hardware property changes. */
-static OSStatus audioPropertyCallback(AudioHardwarePropertyID inPropertyID, 
+static OSStatus audioPropertyCallback(AudioHardwarePropertyID inPropertyID,
         void *refCon)
 {
     (void)refCon;
@@ -48,22 +48,22 @@ static OSStatus audioPropertyCallback(AudioHardwarePropertyID inPropertyID,
 
 void PaUtil_InitializeHotPlug()
 {
-    AudioHardwareAddPropertyListener(kAudioHardwarePropertyDevices,  
-            audioPropertyCallback, NULL); 
-    AudioHardwareAddPropertyListener(kAudioHardwarePropertyDefaultInputDevice,  
-            audioPropertyCallback, NULL); 
-    AudioHardwareAddPropertyListener(kAudioHardwarePropertyDefaultOutputDevice,  
-            audioPropertyCallback, NULL); 
+    AudioHardwareAddPropertyListener(kAudioHardwarePropertyDevices,
+            audioPropertyCallback, NULL);
+    AudioHardwareAddPropertyListener(kAudioHardwarePropertyDefaultInputDevice,
+            audioPropertyCallback, NULL);
+    AudioHardwareAddPropertyListener(kAudioHardwarePropertyDefaultOutputDevice,
+            audioPropertyCallback, NULL);
 }
 
 void PaUtil_TerminateHotPlug()
 {
-    AudioHardwareRemovePropertyListener(kAudioHardwarePropertyDevices,  
-            audioPropertyCallback); 
-    AudioHardwareRemovePropertyListener(kAudioHardwarePropertyDefaultInputDevice,  
-            audioPropertyCallback); 
-    AudioHardwareRemovePropertyListener(kAudioHardwarePropertyDefaultOutputDevice,  
-            audioPropertyCallback); 
+    AudioHardwareRemovePropertyListener(kAudioHardwarePropertyDevices,
+            audioPropertyCallback);
+    AudioHardwareRemovePropertyListener(kAudioHardwarePropertyDefaultInputDevice,
+            audioPropertyCallback);
+    AudioHardwareRemovePropertyListener(kAudioHardwarePropertyDefaultOutputDevice,
+            audioPropertyCallback);
 }
 
 void PaUtil_LockHotPlug()
@@ -73,4 +73,3 @@ void PaUtil_LockHotPlug()
 void PaUtil_UnlockHotPlug()
 {
 }
-

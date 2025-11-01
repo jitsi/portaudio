@@ -787,14 +787,14 @@ PaError Pa_UpdateAvailableDeviceList( void )
     }
 
     /* Allocate data structures used in 2-stage commit */
-    scanResults = (void **) PaUtil_AllocateMemory( sizeof(void*) * hostApisCount_ );
+    scanResults = (void **) PaUtil_AllocateZeroInitializedMemory( sizeof(void*) * hostApisCount_ );
     if( !scanResults )
     {
         result = paInsufficientMemory;
         goto done;
     }
 
-    deviceCounts = ( int * ) PaUtil_AllocateMemory( sizeof( int ) * hostApisCount_ );
+    deviceCounts = ( int * ) PaUtil_AllocateZeroInitializedMemory( sizeof( int ) * hostApisCount_ );
     if( !deviceCounts )
     {
         result = paInsufficientMemory;

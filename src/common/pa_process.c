@@ -894,16 +894,16 @@ static unsigned long NonAdaptingProcess( PaUtilBufferProcessor *bp,
                 if( bp->outputChannelCount != 0 && bp->hostOutputChannels[0][0].data )
                 {
                     if( skipOutputConvert )
-					{
-						for( i=0; i<bp->outputChannelCount; ++i )
-                    	{
-                        	/* advance dest ptr for next iteration */
-                        	hostOutputChannels[i].data = ((unsigned char*)hostOutputChannels[i].data) +
-                            	    frameCount * hostOutputChannels[i].stride * bp->bytesPerHostOutputSample;
-                    	}
-					}
-					else
-					{
+                    {
+                        for( i=0; i<bp->outputChannelCount; ++i )
+                        {
+                            /* advance dest ptr for next iteration */
+                            hostOutputChannels[i].data = ((unsigned char*)hostOutputChannels[i].data) +
+                                    frameCount * hostOutputChannels[i].stride * bp->bytesPerHostOutputSample;
+                        }
+                    }
+                    else
+                    {
 
                     srcBytePtr = (unsigned char *)bp->tempOutputBuffer;
 

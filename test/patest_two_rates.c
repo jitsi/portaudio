@@ -69,9 +69,9 @@ typedef struct
 */
 static int patestCallback( const void *inputBuffer, void *outputBuffer,
                            unsigned long framesPerBuffer,
-						  const PaStreamCallbackTimeInfo* timeInfo,
-						  PaStreamCallbackFlags statusFlags,
-						  void *userData )
+                           const PaStreamCallbackTimeInfo* timeInfo,
+                           PaStreamCallbackFlags statusFlags,
+                           void *userData )
 {
     paTestData *data = (paTestData*)userData;
     float *out = (float*)outputBuffer;
@@ -122,10 +122,10 @@ int main(void)
     /* Start first stream. **********************/
     err = Pa_OpenStream(
               &stream1,
-						NULL, /* no input */
-						&outputParameters,
+              NULL, /* no input */
+              &outputParameters,
               SAMPLE_RATE_1,
-						FRAMES_PER_BUFFER,
+              FRAMES_PER_BUFFER,
               paClipOff,      /* we won't output out of range samples so don't bother clipping them */
               patestCallback,
               &data1 );
@@ -139,10 +139,10 @@ int main(void)
     /* Start second stream. **********************/
     err = Pa_OpenStream(
               &stream2,
-						NULL, /* no input */
-						&outputParameters,
+              NULL, /* no input */
+              &outputParameters,
               SAMPLE_RATE_2,
-						FRAMES_PER_BUFFER,
+              FRAMES_PER_BUFFER,
               paClipOff,      /* we won't output out of range samples so don't bother clipping them */
               patestCallback,
               &data2 );

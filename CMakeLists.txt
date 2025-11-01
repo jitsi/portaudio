@@ -306,6 +306,7 @@ elseif(UNIX)
     set(CMAKE_MACOSX_RPATH 1)
     target_sources(portaudio PRIVATE
       src/hostapi/coreaudio/pa_mac_core.c
+      src/hostapi/coreaudio/pa_mac_core_hotplug.c
       src/hostapi/coreaudio/pa_mac_core_blocking.c
       src/hostapi/coreaudio/pa_mac_core_blocking.h
       src/hostapi/coreaudio/pa_mac_core_internal.h
@@ -338,7 +339,7 @@ elseif(UNIX)
     if(PA_USE_ALSA)
       target_sources(portaudio PRIVATE
         src/hostapi/alsa/pa_linux_alsa.c
-        rc/hostapi/alsa/pa_linux_alsa_hotplug.c)
+        src/hostapi/alsa/pa_linux_alsa_hotplug.c)
       set(PORTAUDIO_PUBLIC_HEADERS "${PORTAUDIO_PUBLIC_HEADERS}" include/pa_linux_alsa.h)
       target_compile_definitions(portaudio PUBLIC PA_USE_ALSA=1)
       set(PKGCONFIG_CFLAGS "${PKGCONFIG_CFLAGS} -DPA_USE_ALSA=1")

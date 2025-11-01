@@ -419,7 +419,7 @@ SetDeviceInfoTransportType(UINT winMmeDeviceId, PaDeviceInfo *deviceInfo)
                         0)
                     == MMSYSERR_NOERROR)
             {
-                deviceInterface = PaUtil_AllocateMemory(deviceInterfaceSize);
+                deviceInterface = PaUtil_AllocateZeroInitializedMemory(deviceInterfaceSize);
                 if (deviceInterface
                         && (waveInMessage(
                                     (HWAVEIN)((UINT_PTR)winMmeDeviceId),
@@ -442,7 +442,7 @@ SetDeviceInfoTransportType(UINT winMmeDeviceId, PaDeviceInfo *deviceInfo)
                         0)
                     == MMSYSERR_NOERROR)
             {
-                deviceInterface = PaUtil_AllocateMemory(deviceInterfaceSize);
+                deviceInterface = PaUtil_AllocateZeroInitializedMemory(deviceInterfaceSize);
                 if (deviceInterface
                         && (waveOutMessage(
                                     (HWAVEOUT)((UINT_PTR)winMmeDeviceId),
@@ -878,7 +878,7 @@ static PaError InitializeInputDeviceInfo( PaWinMmeHostApiRepresentation *winMmeH
     if (mmr == MMSYSERR_NOERROR)  // do sizes match?
     {
         WCHAR *pstrEndpointId = NULL;
-        pstrEndpointId = (WCHAR *)PaUtil_GroupAllocateMemory(winMmeHostApi->allocations, (long)cbEndpointIdSize);
+        pstrEndpointId = (WCHAR *)PaUtil_GroupAllocateZeroInitializedMemory(winMmeHostApi->allocations, (long)cbEndpointIdSize);
 
         // Get the endpoint ID string for this waveOut device.
         mmr = waveInMessage(
@@ -889,7 +889,7 @@ static PaError InitializeInputDeviceInfo( PaWinMmeHostApiRepresentation *winMmeH
 
         if (mmr == MMSYSERR_NOERROR)
         {
-            deviceUID = (char *)PaUtil_GroupAllocateMemory(winMmeHostApi->allocations, (long)wcslen(pstrEndpointId) + 1);
+            deviceUID = (char *)PaUtil_GroupAllocateZeroInitializedMemory(winMmeHostApi->allocations, (long)wcslen(pstrEndpointId) + 1);
             if( !deviceUID )
             {
                 result = paInsufficientMemory;
@@ -1068,7 +1068,7 @@ static PaError InitializeOutputDeviceInfo( PaWinMmeHostApiRepresentation *winMme
     if (mmr == MMSYSERR_NOERROR)  // do sizes match?
     {
         WCHAR *pstrEndpointId = NULL;
-        pstrEndpointId = (WCHAR *)PaUtil_GroupAllocateMemory(winMmeHostApi->allocations, (long)cbEndpointIdSize);
+        pstrEndpointId = (WCHAR *)PaUtil_GroupAllocateZeroInitializedMemory(winMmeHostApi->allocations, (long)cbEndpointIdSize);
 
         // Get the endpoint ID string for this waveOut device.
         mmr = waveOutMessage(
@@ -1079,7 +1079,7 @@ static PaError InitializeOutputDeviceInfo( PaWinMmeHostApiRepresentation *winMme
 
         if (mmr == MMSYSERR_NOERROR)
         {
-            deviceUID = (char *)PaUtil_GroupAllocateMemory(winMmeHostApi->allocations, (long)wcslen(pstrEndpointId));
+            deviceUID = (char *)PaUtil_GroupAllocateZeroInitializedMemory(winMmeHostApi->allocations, (long)wcslen(pstrEndpointId));
             if( !deviceUID )
             {
                 result = paInsufficientMemory;
@@ -1442,7 +1442,7 @@ static PaError ScanDeviceInfos( struct PaUtilHostApiRepresentation *hostApi, PaH
 
     // Check preconditions
     if( /*!comWasInitialized ||*/ scanResults == NULL || newDeviceCount == NULL )
-       return paInternalError;
+        return paInternalError;
 
     /* initialize the out params */
     *scanResults = NULL;
@@ -1475,7 +1475,7 @@ static PaError ScanDeviceInfos( struct PaUtilHostApiRepresentation *hostApi, PaH
     if( maximumPossibleDeviceCount > 0 )
     {
         /* Allocate the out param for all the info we need */
-        outArgument = (PaWinMmeScanDeviceInfosResults *) PaUtil_GroupAllocateMemory(
+        outArgument = (PaWinMmeScanDeviceInfosResults *) PaUtil_GroupAllocateZeroInitializedMemory(
                         winMmeHostApi->allocations, sizeof(PaWinMmeScanDeviceInfosResults) );
         if( !outArgument )
         {
@@ -1484,7 +1484,7 @@ static PaError ScanDeviceInfos( struct PaUtilHostApiRepresentation *hostApi, PaH
         }
 
         /* allocate array for pointers to PaDeviceInfo structs */
-        outArgument->deviceInfos = (PaDeviceInfo**)PaUtil_GroupAllocateMemory(
+        outArgument->deviceInfos = (PaDeviceInfo**)PaUtil_GroupAllocateZeroInitializedMemory(
                 winMmeHostApi->allocations, sizeof(PaDeviceInfo*) * maximumPossibleDeviceCount );
         if( !outArgument->deviceInfos )
         {
@@ -1493,7 +1493,7 @@ static PaError ScanDeviceInfos( struct PaUtilHostApiRepresentation *hostApi, PaH
         }
 
         // allocate all device info structs in a contiguous block
-        deviceInfoArray = (PaWinMmeDeviceInfo*)PaUtil_GroupAllocateMemory(
+        deviceInfoArray = (PaWinMmeDeviceInfo*)PaUtil_GroupAllocateZeroInitializedMemory(
                 winMmeHostApi->allocations, sizeof(PaWinMmeDeviceInfo) * maximumPossibleDeviceCount );
         if( !deviceInfoArray )
         {
@@ -1501,7 +1501,7 @@ static PaError ScanDeviceInfos( struct PaUtilHostApiRepresentation *hostApi, PaH
             goto error;
         }
 
-        winMmeHostApi->winMmeDeviceIds = (UINT*)PaUtil_GroupAllocateMemory(
+        winMmeHostApi->winMmeDeviceIds = (UINT*)PaUtil_GroupAllocateZeroInitializedMemory(
                 winMmeHostApi->allocations, sizeof(int) * maximumPossibleDeviceCount );
         if( !winMmeHostApi->winMmeDeviceIds )
         {
@@ -3903,7 +3903,7 @@ static PaError StopStream( PaStream *s )
                        possible to unplug a device and to wait here forever. In
                        order to prevent such a scenario, do eventually given up.
                     */
-                    totalTimeout += timeout;
+                    totalTimeout += timeoutMs;
                     if( PA_MME_MAX_TIMEOUT_MSEC_ <= totalTimeout)
                     {
                         result = paTimedOut;
@@ -4175,7 +4175,7 @@ static PaError ReadStream( PaStream* s,
                        wait here forever. In order to allow the caller to handle
                        such cases of repeated timeouts, do eventually given up.
                     */
-                    totalTimeout += timeout;
+                    totalTimeout += pollTimeoutMs;
                     if( PA_MME_MAX_TIMEOUT_MSEC_ <= totalTimeout)
                     {
                         result = paTimedOut;
@@ -4301,7 +4301,7 @@ static PaError WriteStream( PaStream* s,
                        wait here forever. In order to allow the caller to handle
                        such cases of repeated timeouts, do eventually given up.
                     */
-                    totalTimeout += timeout;
+                    totalTimeout += pollTimeoutMs;
                     if( PA_MME_MAX_TIMEOUT_MSEC_ <= totalTimeout)
                     {
                         result = paTimedOut;

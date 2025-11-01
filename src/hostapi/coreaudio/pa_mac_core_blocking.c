@@ -461,15 +461,15 @@ PaError ReadStream( PaStream* stream,
 #else
                 Pa_Sleep( PA_MAC_BLIO_BUSY_WAIT_SLEEP_INTERVAL );
 
-             // If a timeout is encountered, continue.  However, testing has
-             // shown that it is possible to unplug a device and to wait here
-             // forever. In order to allow the caller to handle such cases of
-             // repeated timeouts, do eventually given up.
-             totalTimeout += PA_MAC_BLIO_BUSY_WAIT_SLEEP_INTERVAL;
-             if( PA_COREAUDIO_MAX_TIMEOUT_MSEC_ <= totalTimeout)
-             {
-                 return paTimedOut;
-             }
+                // If a timeout is encountered, continue.  However, testing has
+                // shown that it is possible to unplug a device and to wait here
+                // forever. In order to allow the caller to handle such cases of
+                // repeated timeouts, do eventually given up.
+                totalTimeout += PA_MAC_BLIO_BUSY_WAIT_SLEEP_INTERVAL;
+                if( PA_COREAUDIO_MAX_TIMEOUT_MSEC_ <= totalTimeout)
+                {
+                    return paTimedOut;
+                }
 #endif
             }
         } while( framesAvailable == 0 );
@@ -556,15 +556,15 @@ PaError WriteStream( PaStream* stream,
 #else
                 Pa_Sleep( PA_MAC_BLIO_BUSY_WAIT_SLEEP_INTERVAL );
 
-             // If a timeout is encountered, continue.  However, testing has
-             // shown that it is possible to unplug a device and to wait here
-             // forever. In order to allow the caller to handle such cases of
-             // repeated timeouts, do eventually given up.
-             totalTimeout += PA_MAC_BLIO_BUSY_WAIT_SLEEP_INTERVAL;
-             if( PA_COREAUDIO_MAX_TIMEOUT_MSEC_ <= totalTimeout)
-             {
-                 return paTimedOut;
-             }
+                // If a timeout is encountered, continue.  However, testing has
+                // shown that it is possible to unplug a device and to wait here
+                // forever. In order to allow the caller to handle such cases of
+                // repeated timeouts, do eventually given up.
+                totalTimeout += PA_MAC_BLIO_BUSY_WAIT_SLEEP_INTERVAL;
+                if( PA_COREAUDIO_MAX_TIMEOUT_MSEC_ <= totalTimeout)
+                {
+                    return paTimedOut;
+                }
 #endif
             }
         } while( framesAvailable == 0 && macStream->state != STOPPING );

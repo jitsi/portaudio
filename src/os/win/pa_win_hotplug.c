@@ -21,7 +21,7 @@
 /* GUID KSCATEGORY_AUDIO */
 static const GUID pa_KSCATEGORY_AUDIO = { STATIC_KSCATEGORY_AUDIO };
 
-/* Implemented in pa_front.c 
+/* Implemented in pa_front.c
   @param first  0 = unknown, 1 = insertion, 2 = removal
   @param second Host specific device change info (in windows it is the (unicode) device path)
 */
@@ -104,7 +104,7 @@ static void InsertDeviceIntoCache(PaHotPlugDeviceEventHandlerInfo* pInfo, const 
         ppEntry = &entry->next;
     }
 
-    *ppEntry = (PaHotPlugDeviceInfo*)PaUtil_GroupAllocateMemory(pInfo->cacheAllocGroup, sizeof(PaHotPlugDeviceInfo));
+    *ppEntry = (PaHotPlugDeviceInfo*)PaUtil_GroupAllocateZeroInitializedMemory(pInfo->cacheAllocGroup, sizeof(PaHotPlugDeviceInfo));
     wcsncpy((*ppEntry)->name, name, MAX_PATH-1);
     (*ppEntry)->next = NULL;
 }
@@ -121,7 +121,7 @@ static void PopulateCacheWithAvailableAudioDevices(PaHotPlugDeviceEventHandlerIn
 {
     HDEVINFO handle = NULL;
     const int sizeInterface = sizeof(SP_DEVICE_INTERFACE_DETAIL_DATA_W) + (MAX_PATH * sizeof(WCHAR));
-    SP_DEVICE_INTERFACE_DETAIL_DATA_W* devInterfaceDetails = (SP_DEVICE_INTERFACE_DETAIL_DATA_W*)PaUtil_AllocateMemory(sizeInterface);
+    SP_DEVICE_INTERFACE_DETAIL_DATA_W* devInterfaceDetails = (SP_DEVICE_INTERFACE_DETAIL_DATA_W*)PaUtil_AllocateZeroInitializedMemory(sizeInterface);
 
     if (devInterfaceDetails)
     {
@@ -236,7 +236,7 @@ PA_THREAD_FUNC PaRunMessageLoop(void* ptr)
 #define DEVICE_NOTIFY_ALL_INTERFACE_CLASSES  0x00000004
 #endif
 
-        pInfo->hNotify = RegisterDeviceNotificationW( 
+        pInfo->hNotify = RegisterDeviceNotificationW(
             pInfo->hWnd,
             &NotificationFilter,
             DEVICE_NOTIFY_WINDOW_HANDLE|DEVICE_NOTIFY_ALL_INTERFACE_CLASSES
@@ -248,17 +248,17 @@ PA_THREAD_FUNC PaRunMessageLoop(void* ptr)
 
         if (pInfo->hNotify)
         {
-            MSG msg; 
+            MSG msg;
             BOOL result;
-            while((result = GetMessageW(&msg, pInfo->hWnd, 0, 0)) != 0) 
-            { 
+            while((result = GetMessageW(&msg, pInfo->hWnd, 0, 0)) != 0)
+            {
                 if (result == -1)
                 {
                     break;
                 }
-                TranslateMessage(&msg); 
-                DispatchMessageW(&msg); 
-            } 
+                TranslateMessage(&msg);
+                DispatchMessageW(&msg);
+            }
             UnregisterDeviceNotification(pInfo->hNotify);
             pInfo->hNotify = 0;
         }
@@ -275,7 +275,7 @@ void PaUtil_InitializeHotPlug()
     PA_LOGAPI_ENTER( "PaUtil_InitializeHotPlug" );
     if (s_handler == 0)
     {
-        s_handler = (PaHotPlugDeviceEventHandlerInfo*)PaUtil_AllocateMemory(sizeof(PaHotPlugDeviceEventHandlerInfo));
+        s_handler = (PaHotPlugDeviceEventHandlerInfo*)PaUtil_AllocateZeroInitializedMemory(sizeof(PaHotPlugDeviceEventHandlerInfo));
         if (s_handler)
         {
             s_handler->cacheAllocGroup = PaUtil_CreateAllocationGroup();

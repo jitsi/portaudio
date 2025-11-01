@@ -1287,7 +1287,7 @@ static PaError FillInDevInfo( PaAlsaHostApiRepresentation *alsaApi, HwDevInfo* d
         // later on. Without the copy and the first (i.e. devIdx == 0) assigned
         // devInfo is not the first alsa device, free'ing would happen on an
         // invalid pointer.
-        PA_UNLESS( out->deviceInfos[*devIdx] = (PaDeviceInfo*)PaUtil_GroupAllocateMemory(
+        PA_UNLESS( out->deviceInfos[*devIdx] = (PaDeviceInfo*)PaUtil_GroupAllocateZeroInitializedMemory(
             alsaApi->allocations, sizeof(PaAlsaDeviceInfo) ), paInsufficientMemory );
         memcpy( out->deviceInfos[*devIdx], devInfo, sizeof(PaAlsaDeviceInfo) );
         PA_ENSURE( PaAlsa_StrDup( alsaApi, (char **)&out->deviceInfos[*devIdx]->name, baseDeviceInfo->name ) );
@@ -1503,7 +1503,7 @@ static PaError BuildDeviceList( PaAlsaHostApiRepresentation *alsaApi, void** sca
     else
         PA_DEBUG(( "%s: Iterating over ALSA plugins failed: %s\n", __FUNCTION__, alsa_snd_strerror( res ) ));
 
-    out = (PaLinuxScanDeviceInfosResults *) PaUtil_GroupAllocateMemory(
+    out = (PaLinuxScanDeviceInfosResults *) PaUtil_GroupAllocateZeroInitializedMemory(
                             alsaApi->allocations, sizeof(PaLinuxScanDeviceInfosResults) );
 
     out->defaultInputDevice = paNoDevice;

@@ -979,7 +979,7 @@ static PaError AddOutputDeviceInfoFromDirectSound(
     }
 
     /* Copy GUID to the device info structure. Set pointer. */
-    char * deviceUID = (char *)PaUtil_GroupAllocateMemory(allocations, 40);
+    char * deviceUID = (char *)PaUtil_GroupAllocateZeroInitializedMemory(allocations, 40);
     memset(deviceUID, 0, 40);
     if( lpGUID == NULL )
     {
@@ -1162,7 +1162,7 @@ static PaError AddInputDeviceInfoFromDirectSoundCapture(
 
 
     /* Copy GUID to the device info structure. Set pointer. */
-    char * deviceUID = (char *)PaUtil_GroupAllocateMemory(allocations, 40);
+    char * deviceUID = (char *)PaUtil_GroupAllocateZeroInitializedMemory(allocations, 40);
     memset(deviceUID, 0, 40);
     if( lpGUID == NULL )
     {
@@ -1205,11 +1205,6 @@ PaError PaWinDs_Initialize( PaUtilHostApiRepresentation **hostApi, PaHostApiInde
     void *scanResults = 0;
 
     PaWinDs_InitializeDSoundEntryPoints();
-
-    /* initialise guid vectors so they can be safely deleted on error */
-    deviceNamesAndGUIDs.winDsHostApi = NULL;
-    deviceNamesAndGUIDs.inputNamesAndGUIDs.items = NULL;
-    deviceNamesAndGUIDs.outputNamesAndGUIDs.items = NULL;
 
     winDsHostApi = (PaWinDsHostApiRepresentation*)
             PaUtil_AllocateZeroInitializedMemory(sizeof(PaWinDsHostApiRepresentation) );
@@ -1432,7 +1427,7 @@ static PaError ScanDeviceInfos( struct PaUtilHostApiRepresentation *hostApi, PaH
 
     /* Check preconditions */
     if( !PaWinUtil_CoIsInitialized(&winDsHostApi->comInitializationResult) || scanResults == NULL || newDeviceCount == NULL )
-       return paInternalError;
+        return paInternalError;
 
     /* initialize the out params */
     *scanResults = NULL;
@@ -1484,7 +1479,7 @@ static PaError ScanDeviceInfos( struct PaUtilHostApiRepresentation *hostApi, PaH
     if( maximumNewDeviceCount > 0 )
     {
         /* Allocate the out param for all the info we need */
-        outArgument = (PaWinDsScanDeviceInfosResults *) PaUtil_GroupAllocateMemory(
+        outArgument = (PaWinDsScanDeviceInfosResults *) PaUtil_GroupAllocateZeroInitializedMemory(
                         winDsHostApi->allocations, sizeof(PaWinDsScanDeviceInfosResults) );
         if( !outArgument )
         {
@@ -1493,7 +1488,7 @@ static PaError ScanDeviceInfos( struct PaUtilHostApiRepresentation *hostApi, PaH
         }
 
         /* allocate array for pointers to PaDeviceInfo structs */
-        outArgument->deviceInfos = (PaDeviceInfo**)PaUtil_GroupAllocateMemory(
+        outArgument->deviceInfos = (PaDeviceInfo**)PaUtil_GroupAllocateZeroInitializedMemory(
                 winDsHostApi->allocations, sizeof(PaDeviceInfo*) * maximumNewDeviceCount );
         if( !outArgument->deviceInfos )
         {
@@ -1502,7 +1497,7 @@ static PaError ScanDeviceInfos( struct PaUtilHostApiRepresentation *hostApi, PaH
         }
 
         /* allocate all PaDeviceInfo structs in a contiguous block */
-        deviceInfoArray = (PaWinDsDeviceInfo*)PaUtil_GroupAllocateMemory(
+        deviceInfoArray = (PaWinDsDeviceInfo*)PaUtil_GroupAllocateZeroInitializedMemory(
                 winDsHostApi->allocations, sizeof(PaWinDsDeviceInfo) * maximumNewDeviceCount );
         if( !deviceInfoArray )
         {

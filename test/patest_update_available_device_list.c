@@ -35,18 +35,17 @@ int main(int argc, char* argv[])
 
     for(;;){
         printDevices();
-        
+
         printf( "press [enter] to update the device list. or q + [enter] to quit.\n" );
         fflush(stdout);
         char ch = getchar();
         if( ch == 'q' )
             break;
-    
+
         Pa_UpdateAvailableDeviceList();
     }
 
     Pa_Terminate();
 
-	return 0;
+    return 0;
 }
-

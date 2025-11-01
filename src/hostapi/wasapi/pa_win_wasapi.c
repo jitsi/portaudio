@@ -1756,7 +1756,7 @@ static PaError FillDeviceInfo(PaWasapiHostApiRepresentation *paWasapi, void *pEn
         wcsncpy(wasapiDeviceInfo->deviceId, deviceId, PA_WASAPI_DEVICE_ID_LEN - 1);
         CoTaskMemFree(deviceId);
 
-        if ((deviceInfo->deviceUID = (char *)PaUtil_GroupAllocateMemory(paWasapi->allocations, PA_WASAPI_DEVICE_ID_LEN)) == NULL)
+        if ((deviceInfo->deviceUID = (char *)PaUtil_GroupAllocateZeroInitializedMemory(paWasapi->allocations, PA_WASAPI_DEVICE_ID_LEN)) == NULL)
         {
             result = paInsufficientMemory;
             goto error;
@@ -1855,7 +1855,7 @@ static PaError FillDeviceInfo(PaWasapiHostApiRepresentation *paWasapi, void *pEn
 #else
     // Set device Id
     wcsncpy(wasapiDeviceInfo->deviceId, listEntry->info->id, PA_WASAPI_DEVICE_ID_LEN - 1);
-    if ((deviceInfo->deviceUID = (char *)PaUtil_GroupAllocateMemory(paWasapi->allocations, PA_WASAPI_DEVICE_ID_LEN)) == NULL)
+    if ((deviceInfo->deviceUID = (char *)PaUtil_GroupAllocateZeroInitializedMemory(paWasapi->allocations, PA_WASAPI_DEVICE_ID_LEN)) == NULL)
     {
         result = paInsufficientMemory;
         goto error;
@@ -6633,7 +6633,7 @@ static PaError ScanDeviceInfos( struct PaUtilHostApiRepresentation *hostApi, PaH
     *newDeviceCount = 0;
 
     // create a dummy host api where the default device scan can write its results
-    PaWasapiHostApiRepresentation *paWasapiDummy = PaUtil_GroupAllocateMemory(paWasapi->allocations, sizeof(PaWasapiHostApiRepresentation));
+    PaWasapiHostApiRepresentation *paWasapiDummy = PaUtil_GroupAllocateZeroInitializedMemory(paWasapi->allocations, sizeof(PaWasapiHostApiRepresentation));
     if (!paWasapiDummy)
     {
         scanError = paInsufficientMemory;
