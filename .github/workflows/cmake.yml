@@ -66,21 +66,21 @@ jobs:
       cmake_build_type: RelWithDebInfo
     steps:
     - name: Checkout PortAudio Git repository
-      uses: actions/checkout@v2
+      uses: actions/checkout@ee0669bd1cc54295c223e0bb666b733df41de1c5  # v2
     - name: "Install dependencies [Ubuntu]"
       run: |
         sudo apt-get update
         sudo apt-get install libasound2-dev libpulse-dev libsndio-dev ${{ matrix.dependencies_extras }}
       if: matrix.os == 'ubuntu-latest'
     - name: "Set up ASIO SDK cache [Windows/MinGW]"
-      uses: actions/cache@v4
+      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830  # v4
       if: matrix.asio_sdk_cache_path != null
       with:
         path: ${{ matrix.asio_sdk_cache_path }}
         key: ${{ hashFiles('.github/asiosdk-version.txt') }}
 
     - name: Setup vcpkg
-      uses: lukka/run-vcpkg@v11
+      uses: lukka/run-vcpkg@7d259227a1fb6471a0253dd5ab7419835228f7d7  # v11
       if: ${{ matrix.vcpkg_triplet }} != null
       with:
         vcpkgDirectory: ${{ github.workspace }}/../vcpkg
