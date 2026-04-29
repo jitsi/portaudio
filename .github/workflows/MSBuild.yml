@@ -2,6 +2,9 @@ name: MSBuild MSVC Project File CI
 
 on: [push, pull_request]
 
+permissions:
+  contents: read
+
 env:
   # Path to the solution file relative to the root of the project.
   SOLUTION_FILE_PATH: ./msvc/portaudio.sln
@@ -22,9 +25,9 @@ jobs:
 
     steps:
     - name: Add MSBuild to PATH
-      uses: microsoft/setup-msbuild@v1
+      uses: microsoft/setup-msbuild@ede762b26a2de8d110bb5a3db4d7e0e080c0e917 # v1
 
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@ee0669bd1cc54295c223e0bb666b733df41de1c5 # v2
 
     - name: Upgrade VC Project File
       # We maintain our vcproj file in an old format to maintain backwards compatibility
