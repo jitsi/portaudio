@@ -6,6 +6,9 @@ on:
   pull_request:
     branches: [ master ]
 
+permissions:
+  contents: read
+
 env:
   # GitHub CI Actions-specific environment variables:
 
@@ -49,10 +52,10 @@ jobs:
         shell: bash
     steps:
     - name: checkout PortAudio git repo
-      uses: actions/checkout@v2
+      uses: actions/checkout@ee0669bd1cc54295c223e0bb666b733df41de1c5 # v2
 
     - name: setup vcpkg
-      uses: lukka/run-vcpkg@v7.6
+      uses: lukka/run-vcpkg@8a5116de2b552d6fc8894e9774aacaf2e5db4823 # v7.6
       if: ${{ matrix.vcpkg_triplet }} != null
       with:
         vcpkgDirectory: ${{ github.workspace }}/../vcpkg
